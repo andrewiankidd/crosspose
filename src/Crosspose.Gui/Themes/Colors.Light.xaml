@@ -1,0 +1,30 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Base -->
+    <SolidColorBrush x:Key="WindowBackground" Color="#F8F9FB" />
+    <SolidColorBrush x:Key="PanelBackground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="SidebarBackground" Color="#EAEAEA" />
+    <SolidColorBrush x:Key="BorderBrushColor" Color="#D0D5DD" />
+    <SolidColorBrush x:Key="TextPrimary" Color="#111827" />
+    <SolidColorBrush x:Key="TextMuted" Color="#4B5563" />
+    <SolidColorBrush x:Key="InputBackground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="InputBorder" Color="#D0D5DD" />
+
+    <!-- Buttons -->
+    <SolidColorBrush x:Key="ButtonBackground" Color="#E5E7EB" />
+    <SolidColorBrush x:Key="ButtonForeground" Color="#111827" />
+    <SolidColorBrush x:Key="ButtonBorder" Color="#D0D5DD" />
+    <SolidColorBrush x:Key="ButtonDisabledBackground" Color="#ECEEF1" />
+    <SolidColorBrush x:Key="ButtonDisabledForeground" Color="#9CA3AF" />
+    <SolidColorBrush x:Key="ButtonDisabledBorder" Color="#D8DDE5" />
+    <SolidColorBrush x:Key="AccentPositive" Color="#16A34A" />
+
+    <!-- Lists -->
+    <SolidColorBrush x:Key="ListBackground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="ListBorder" Color="#D0D5DD" />
+
+    <!-- Error/Warning -->
+    <SolidColorBrush x:Key="ErrorBorder" Color="#EF4444" />
+    <SolidColorBrush x:Key="ErrorBackground" Color="#FEE2E2" />
+    <SolidColorBrush x:Key="ErrorText" Color="#991B1B" />
+</ResourceDictionary>

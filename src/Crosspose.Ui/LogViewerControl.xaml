@@ -1,0 +1,33 @@
+<UserControl x:Class="Crosspose.Ui.LogViewerControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <Expander IsExpanded="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay}"
+              Margin="0,12,0,0">
+        <Expander.Header>
+            <TextBlock Text="{Binding HeaderText, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+        </Expander.Header>
+        <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                <Button Content="Clear log" Margin="0,0,8,0" Click="OnClearClick" />
+                <Button Content="Copy log" Click="OnCopyClick" />
+            </StackPanel>
+            <TextBox x:Name="LogTextBox"
+                     Text="{Binding LogText, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     IsReadOnly="True"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     Height="140"
+                     FontFamily="Consolas">
+                <TextBox.CommandBindings>
+                    <CommandBinding Command="Copy"
+                                    Executed="OnCopyCommandExecuted"
+                                    CanExecute="OnCopyCommandCanExecute" />
+                </TextBox.CommandBindings>
+            </TextBox>
+        </StackPanel>
+    </Expander>
+</UserControl>

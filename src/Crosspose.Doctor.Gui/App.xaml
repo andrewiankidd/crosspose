@@ -1,0 +1,24 @@
+﻿<Application x:Class="Crosspose.Doctor.Gui.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Crosspose.Doctor.Gui"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Colors.Dark.xaml" />
+                <!-- Light last so it's the default -->
+                <ResourceDictionary Source="Themes/Colors.Light.xaml" />
+                <ResourceDictionary Source="Themes/Generic.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Style.Triggers>
+                    <Trigger Property="Tag" Value="AccentPositive">
+                        <Setter Property="Background" Value="{DynamicResource AccentPositive}" />
+                        <Setter Property="Foreground" Value="White" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,27 @@
+<Application x:Class="Crosspose.Gui.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Crosspose.Gui"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Dark first, light last so light is the default -->
+                <ResourceDictionary Source="Themes/Colors.Dark.xaml" />
+                <ResourceDictionary Source="Themes/Colors.Light.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <!-- Minimal: use default buttons; opt-in green via Tag="AccentPositive" -->
+            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Style.Triggers>
+                    <Trigger Property="Tag" Value="AccentPositive">
+                        <Setter Property="Background" Value="{DynamicResource AccentPositive}" />
+                        <Setter Property="Foreground" Value="White" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+            <local:StatusBrushConverter x:Key="StatusBrushConverter"/>
+            <local:PlatformIconConverter x:Key="PlatformIconConverter"/>
+            <SolidColorBrush x:Key="SuccessStrokeBrush" Color="#22c55e" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

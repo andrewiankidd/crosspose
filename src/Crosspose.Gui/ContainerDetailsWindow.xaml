@@ -1,0 +1,71 @@
+<Window x:Class="Crosspose.Gui.ContainerDetailsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Container Details"
+        Height="600"
+        Width="900"
+        MinWidth="720"
+        Background="{DynamicResource WindowBackground}"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="12">
+            <TextBlock Text="{Binding Name}" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" />
+            <TextBlock Text="{Binding Image}" Foreground="{DynamicResource TextMuted}" />
+            <TextBlock Text="{Binding Status}" Foreground="{DynamicResource TextMuted}" />
+        </StackPanel>
+
+        <TabControl Margin="12" Background="{DynamicResource PanelBackground}" Foreground="{DynamicResource TextPrimary}">
+            <TabItem Header="Logs">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="Refresh logs" Padding="8,4" Click="OnRefreshLogs" Background="{DynamicResource ButtonBackground}" Foreground="{DynamicResource ButtonForeground}" BorderBrush="{DynamicResource ButtonBorder}" />
+                        <TextBlock x:Name="LogsStatus" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextMuted}" />
+                    </StackPanel>
+                    <Grid Grid.Row="1">
+                        <TextBox x:Name="LogsText"
+                                 Margin="0"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="NoWrap"
+                                 Background="{DynamicResource InputBackground}"
+                                 Foreground="{DynamicResource TextPrimary}"
+                                 BorderBrush="{DynamicResource InputBorder}"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto" />
+                        <Border x:Name="LogsOverlay"
+                                Background="#7F000000"
+                                Visibility="Collapsed">
+                            <TextBlock Text="Loading..."
+                                       Foreground="White"
+                                       FontSize="16"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Background="#99000000"
+                                       Padding="10,6" />
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Inspect">
+                <TextBlock Text="Inspect view coming soon." Padding="8" />
+            </TabItem>
+            <TabItem Header="Bind mounts">
+                <TextBlock Text="Bind mounts view coming soon." Padding="8" />
+            </TabItem>
+            <TabItem Header="Exec">
+                <TextBlock Text="Exec view coming soon." Padding="8" />
+            </TabItem>
+            <TabItem Header="Files">
+                <TextBlock Text="Files view coming soon." Padding="8" />
+            </TabItem>
+            <TabItem Header="Stats">
+                <TextBlock Text="Stats view coming soon." Padding="8" />
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
