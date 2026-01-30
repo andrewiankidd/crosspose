@@ -20,4 +20,6 @@ These prerequisites are needed for the CLI and GUI experiences:
 ## Configuration defaults
 Crosspose stores its shared defaults in `%APPDATA%\crosspose\crosspose.yml`. Customize the `compose.wsl` section if you need different credentials for the dedicated `crosspose-data` WSL distro that Doctor provisions.
 
+If a `.portable` file exists beside the executable, Crosspose switches to portable mode and uses `.\AppData\crosspose` next to the EXE instead of `%APPDATA%`. Existing data is moved into the portable folder on first launch (when the target does not already exist).
+
 Add chart-specific translations under `dekompose.custom-rules` so Dekompose knows which local infra containers (SQL, Service Bus, Azurite, etc.) to spin up and which secrets to rewrite. When those infra entries expose host ports, Doctor will persist the matching `port-proxy:<port>@<network>` additional check to keep the Windows/WSL networking path healthy.

@@ -16,7 +16,7 @@ public static class CrossposeLoggerFactory
     {
         // Configure Serilog file sink
         var logFile = CrossposeEnvironment.LogFilePath
-                     ?? Path.Combine(AppContext.BaseDirectory, "logs", "crosspose.log");
+                     ?? AppDataLocator.GetPreferredFilePath(Path.Combine("logs", "crosspose.log"));
         Directory.CreateDirectory(Path.GetDirectoryName(logFile)!);
 
         var serilogLevel = Internal.SanitizingSerilogLoggerProvider.ConvertLogLevel(minimumLogLevel);

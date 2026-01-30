@@ -17,7 +17,7 @@ Crosspose.Core provides the shared building blocks used by every CLI and GUI. Th
 - `OciSourceClient` and source stores: Manage Helm repo and OCI registry state for Dekompose and the GUIs.
 
 ## Configuration and logging
-- `CrossposeConfigurationStore`: Loads and saves `crosspose.yml` in `%APPDATA%`.
+- `CrossposeConfigurationStore`: Loads and saves `crosspose.yml` in `%APPDATA%` (or `.\AppData\crosspose` in portable mode).
 - `DoctorCheckRegistrar`: Persists `doctor.additional-checks` whenever tools discover new requirements.
 - `CrossposeLoggerFactory` and log store: Unified logging across CLI and GUI layers.
 

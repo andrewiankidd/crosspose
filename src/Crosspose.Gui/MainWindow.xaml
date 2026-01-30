@@ -115,22 +115,24 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <ItemsControl Grid.Row="0" ItemsSource="{Binding Errors}">
-                    <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border BorderBrush="{DynamicResource ErrorBorder}" Background="{DynamicResource ErrorBackground}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,8">
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding}" Foreground="{DynamicResource ErrorText}" TextWrapping="Wrap" Margin="0,0,0,4" />
-                                            <TextBlock Text="Open Crosspose Doctor"
-                                                       FontWeight="Bold"
-                                                       Foreground="{DynamicResource ErrorText}"
-                                                       Cursor="Hand"
-                                                       MouseLeftButtonUp="OnOpenDoctorFromError"/>
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" MaxHeight="200">
+                    <ItemsControl ItemsSource="{Binding Errors}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource ErrorBorder}" Background="{DynamicResource ErrorBackground}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding}" Foreground="{DynamicResource ErrorText}" TextWrapping="Wrap" Margin="0,0,0,4" />
+                                        <TextBlock Text="Open Crosspose Doctor"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource ErrorText}"
+                                                   Cursor="Hand"
+                                                   MouseLeftButtonUp="OnOpenDoctorFromError"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
 
                 <Grid Grid.Row="1" Margin="0,4,0,8">
                     <StackPanel x:Name="DefinitionsToolbar" Orientation="Horizontal" Visibility="Collapsed">

@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Text.Json;
 using Crosspose.Core.Diagnostics;
+using Crosspose.Core.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Crosspose.Core.Orchestration;
@@ -33,7 +34,7 @@ public sealed class HelmClient
         }
 
         // Download to local tools folder
-        var toolsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Crosspose", "helm");
+        var toolsDir = AppDataLocator.GetPreferredDirectory("helm");
         Directory.CreateDirectory(toolsDir);
         var targetExe = Path.Combine(toolsDir, "helm.exe");
         if (File.Exists(targetExe))

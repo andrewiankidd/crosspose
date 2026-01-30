@@ -43,6 +43,7 @@ dotnet run --project src/Crosspose.Cli -- ps -a
 - [Docs home](docs/index.md)
 - [Setup](docs/setup.md)
 - [Examples](docs/examples.md)
+- [Portable mode](docs/configuration.md#portable-mode)
 - [Crosspose](docs/crosspose/index.md)
 - [Crosspose.Gui](docs/crosspose.gui/index.md)
 - [Crosspose.Dekompose](docs/crosspose.dekompose/index.md)

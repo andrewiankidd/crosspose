@@ -59,6 +59,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow()
     {
         InitializeComponent();
+        Title = AppDataLocator.WithPortableSuffix(Title);
         _logStore = new InMemoryLogStore();
         _logStore.OnWrite += _ => OnPropertyChanged(nameof(LogOutput));
         _loggerFactory = Crosspose.Core.Logging.CrossposeLoggerFactory.Create(LogLevel.Information, _logStore);

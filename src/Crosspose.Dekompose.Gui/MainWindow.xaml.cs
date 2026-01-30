@@ -198,6 +198,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow(string? initialOutput = null, bool compressOutput = false, bool includeInfra = false, bool remapServicePorts = false)
     {
         InitializeComponent();
+        Title = AppDataLocator.WithPortableSuffix(Title);
         DataContext = this;
 
         if (!string.IsNullOrWhiteSpace(initialOutput))

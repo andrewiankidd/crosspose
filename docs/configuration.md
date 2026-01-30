@@ -2,6 +2,10 @@
 
 Crosspose keeps its shared configuration in `%APPDATA%\crosspose\crosspose.yml` (or `crosspose.yaml` if the `.yml` file does not yet exist). All components read from this single source via `Crosspose.Core.Configuration.CrossposeConfigurationStore`.
 
+## Portable mode
+
+If a `.portable` file exists beside the executable, Crosspose switches to portable mode and stores all app data under `.\AppData\crosspose` next to the EXE. On first launch in portable mode, existing data from `%APPDATA%\crosspose` and `%LOCALAPPDATA%\Crosspose\helm` is moved into the portable folder (when the target does not already exist).
+
 ## Schema overview
 
 - `compose.output-directory` - Base folder for `dekompose` outputs and GUI definitions. Defaults to `dekompose-outputs`.
@@ -24,7 +28,7 @@ compose:
   deployment-directory: crosspose-deployments
 
   # Optional log path for the shared logger file sink
-  log-file: C:\Users\You\AppData\Local\crosspose\logs\crosspose.log
+  log-file: C:\Users\You\AppData\Roaming\crosspose\logs\crosspose.log
 
   gui:
     # Seconds between auto-refresh ticks in Crosspose.Gui

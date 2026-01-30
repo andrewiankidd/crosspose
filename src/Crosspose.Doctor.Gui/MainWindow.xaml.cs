@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using Crosspose.Core.Configuration;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Doctor;
 using Crosspose.Doctor.Checks;
@@ -16,6 +17,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = AppDataLocator.WithPortableSuffix(Title);
         _runner = new ProcessRunner(_loggerFactory.CreateLogger<ProcessRunner>());
         ChecksList.ItemsSource = _items;
     }

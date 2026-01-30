@@ -49,6 +49,7 @@ Crosspose also injects `NAT_GATEWAY_IP` during `crosspose up` so Docker compose 
 - [Crosspose.Doctor.Gui](crosspose.doctor.gui/index.md) - WPF UI for Doctor with inline fix launches.
 - [Crosspose.Core](crosspose.core/index.md) - shared process/helm/platform runners and logging.
 - [Configuration](configuration.md) - schema for `crosspose.yml`/`.yaml` and how env vars merge.
+- [Portable mode](configuration.md#portable-mode) - run from a self-contained folder with local `AppData`.
 
 ## Next steps
 - Read the [setup guide](setup.md) for prerequisites.
