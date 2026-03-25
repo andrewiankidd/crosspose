@@ -1,32 +1,36 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this project.
+# CLAUDE.md — Crosspose.Gui
 
 See also: [root CLAUDE.md](../../CLAUDE.md)
 
 ## Purpose
 
-Main WPF GUI application for Crosspose. Provides a container dashboard across Docker and Podman, with sidebar navigation for Containers, Images, and Volumes views.
+Main WPF dashboard for Crosspose. Provides a container/image/volume management interface with sidebar navigation, launches Doctor.Gui and Dekompose.Gui as sub-tools.
 
-## Build and Run
+## Sidebar Views
 
-```powershell
-dotnet run --project src/Crosspose.Gui
-```
+- **Setup**: Definitions (compose project definitions for deployment)
+- **Runtime**: Projects, Containers, Images, Volumes
 
-## Architecture
+## Windows
 
-- `MainWindow.xaml` — sidebar navigation (Containers/Images/Volumes), TreeView for containers grouped by project (`ProjectGroupRow` → `ContainerRow`), ListView for images and volumes.
-- `LogWindow` — displays live logs via `InMemoryLogStore` from Core.
-- `ContainerDetailsWindow` — shows details for a selected container.
-- Menu bar launches Doctor.Gui, Docker Desktop, and Podman Desktop as external processes.
-- Targets `net10.0-windows10.0.19041` with WPF (`UseWPF=true`).
+- **MainWindow** — sidebar navigation, TreeView for containers grouped by project, ListView for images/volumes, auto-refresh via `DispatcherTimer`, start/stop/remove actions.
+- **ContainerDetailsWindow** — container inspection with live logs tab (fetches via `docker/podman logs`).
+- **LogWindow** — real-time log viewer subscribed to `InMemoryLogStore`.
+- **AboutWindow** — version info.
 
-## Doctor.Gui Integration
+## Tools Menu
 
-The csproj copies `Crosspose.Doctor.Gui` output into its own bin directory so it can launch it via the Tools menu. This is a `Content` copy, not a project reference with assembly loading.
+Launches external processes:
+- **Crosspose Doctor** — looks for `Crosspose.Doctor.Gui.exe` in output dir, falls back to PATH.
+- **Crosspose Dekompose** — looks for `Crosspose.Dekompose.Gui.exe` similarly.
+- **Docker Desktop** — PATH search walking up from `docker.exe` location.
+- **Podman Desktop** — shell execute.
 
 ## Dependencies
 
-- `Crosspose.Core` — for container runner abstractions, `ProcessRunner`, and logging.
-- `Crosspose.Doctor.Gui` — output files copied at build time (not a runtime assembly reference).
+- `Crosspose.Core` — container runners, logging, configuration.
+- `Crosspose.Ui` — shared WPF controls.
+- `Crosspose.Doctor.Gui` — output copied to bin dir (not assembly reference).
+- `Crosspose.Dekompose.Gui` — output copied to bin dir (not assembly reference).
+- `FluentIcons.Wpf` — icon set.
+- Dark/light theme support via `Themes/Colors.Dark.xaml` and `Colors.Light.xaml`.

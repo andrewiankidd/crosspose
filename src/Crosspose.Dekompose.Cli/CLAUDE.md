@@ -1,24 +1,24 @@
-# CLAUDE.md
+# CLAUDE.md — Crosspose.Dekompose.Cli
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this project.
-
-See also: [root CLAUDE.md](../../CLAUDE.md) | [Dekompose library CLAUDE.md](../Crosspose.Dekompose/CLAUDE.md)
+See also: [root CLAUDE.md](../../CLAUDE.md) | [Dekompose library](../Crosspose.Dekompose/CLAUDE.md)
 
 ## Purpose
 
-Thin CLI entry point for Crosspose Dekompose. Parses args (`--chart`, `--values`, `--manifest`, `--output`), invokes `HelmTemplateRunner` and `ComposeStubWriter`.
+Thin CLI entry point for Dekompose. Parses args, reads chart metadata, invokes `HelmTemplateRunner` + `ComposeGenerator`, optionally compresses output.
 
-## Build and Run
+## Arguments
 
-```powershell
-# Render via helm
-dotnet run --project src/Crosspose.Dekompose.Cli -- --chart C:\path\to\chart --values C:\path\to\values.yaml
-
-# Use a pre-rendered manifest
-dotnet run --project src/Crosspose.Dekompose.Cli -- --manifest C:\path\to\manifest.yaml --output C:\temp\out
-```
+- `--chart <path>` — Helm chart directory or OCI reference.
+- `--chart-version <v>` — optional chart version for helm.
+- `--values <file>` — optional values.yaml.
+- `--dekompose-config <file>` — optional dekompose.yml to merge.
+- `--manifest <file>` — pre-rendered manifest (skips helm).
+- `--output <dir>` — output folder.
+- `--compress` — zip the output and remove the folder.
+- `--infra` — scaffold supporting infrastructure.
+- `--remap-ports` — remap in-cluster service URLs to localhost.
+- `--help`, `--version`
 
 ## Dependencies
 
-- `Crosspose.Core` — for `ProcessRunner`, `ShellDetection`, and logging.
-- `Crosspose.Dekompose` — for `HelmTemplateRunner` and `ComposeStubWriter`.
+- `Crosspose.Core`, `Crosspose.Dekompose`

@@ -1,61 +1,47 @@
 # Code Conventions
 
-Patterns, naming, async usage, error handling, and known inconsistencies.
-
 ## Project Conventions
 
-- **Top-level statements**: All CLI `Program.cs` files use C# top-level statements. Local functions are declared as `static` where possible.
-- **Records for data**: Immutable data types use `record` (e.g., `ProcessResult`, `CheckResult`, `ContainerProcessInfo`).
+- **Library + entry point split**: Libraries hold logic (`Crosspose.X`), CLIs/GUIs are thin wrappers (`Crosspose.X.Cli`/`.Gui`).
+- **Top-level statements**: All CLI `Program.cs` files use C# top-level statements.
+- **Records for data**: Immutable data types use `record` (`ProcessResult`, `CheckResult`, `ContainerProcessInfo`, `ComposeExecutionRequest`, etc.).
 - **Sealed by default**: All concrete non-abstract classes are `sealed`.
-- **Nullable enabled**: All projects have `<Nullable>enable</Nullable>`. Null is used meaningfully (e.g., `Project` is null when a container has no compose project label).
-- **No DI container in CLIs**: CLI projects manually construct their dependency graphs in `Program.cs`. Only `ILoggerFactory` is shared via `CrossposeLoggerFactory`.
-- **No DI container in GUIs**: GUI projects also construct dependencies manually in constructors/`OnLoaded`.
+- **Nullable enabled**: All projects. Null is used meaningfully (e.g., `Project` is null for non-compose containers).
+- **Manual DI**: No DI container — dependency graphs constructed manually in Program.cs / window constructors.
+- **Configuration centralized**: Everything reads from `crosspose.yml` via `CrossposeConfigurationStore` / `CrossposeEnvironment`.
+- **Portable mode**: `.portable` file beside exe switches all data to `.\AppData\crosspose\`.
 
 ## Async Patterns
 
 - All process execution is async via `ProcessRunner.RunAsync`.
-- GUI event handlers use `async void` (WPF requirement for event handlers).
-- Parallel execution via `Task.WhenAll` for independent operations (e.g., docker + podman queries).
-- `ConfigureAwait(false)` used in library code (`ContainerPlatformRunnerBase`, `CombinedContainerPlatformRunner`) but NOT in GUI code (which needs the dispatcher context).
-- Cancellation supported throughout via `CancellationToken` parameters.
+- GUI event handlers use `async void` (WPF requirement).
+- Parallel execution via `Task.WhenAll` for docker + podman queries.
+- `ConfigureAwait(false)` in library code, not in GUI code.
+- Cancellation supported throughout via `CancellationToken`.
 
 ## Error Handling
 
-- `ProcessRunner` catches `Win32Exception` with `NativeErrorCode == 2` to handle "command not found" — returns `ProcessResult(-1, "", "Command not found: ...")` instead of throwing.
-- Doctor checks treat non-zero exit codes as check failures, not exceptions.
-- Container runners swallow JSON parse exceptions and log warnings — partial results are better than crashes.
-- `PodmanContainerRunner` has a `TableParseFallback` for when JSON parsing fails entirely.
-- GUI container refresh retains previous data if a refresh returns 0 containers (likely a transient error).
+- `ProcessRunner` catches `Win32Exception` (NativeErrorCode 2) for "command not found" — returns `ProcessResult(-1, "", "Command not found: ...")`.
+- Doctor checks treat non-zero exit codes as failures, not exceptions.
+- Container runners swallow JSON parse exceptions and log warnings — partial results preferred over crashes.
+- `PodmanContainerRunner` has `TableParseFallback` for non-JSON output.
+- GUI retains previous data if a refresh returns 0 containers (transient error protection).
 
-## Naming Conventions
+## Naming
 
 - **Projects**: `Crosspose.<Component>` (PascalCase).
-- **Namespaces**: Match project names (e.g., `Crosspose.Dekompose.Services`).
-- **Check names**: Lowercase with hyphens (`"docker-compose"`, `"wsl"`, `"crosspose-wsl-instance"`, `"helm"`).
-- **Platform identifiers**: `"docker"`, `"podman"`, `"wsl-podman"`, `"combined"` for Platform field; `"win"`, `"lin"` for HostPlatform.
-- **View model properties**: PascalCase, matching WPF binding conventions.
+- **Namespaces**: Match project names (`Crosspose.Dekompose.Services`, `Crosspose.Doctor.Checks`).
+- **Check names**: Lowercase with hyphens (`"docker-compose"`, `"crosspose-wsl-instance"`).
+- **Platform identifiers**: `"docker"`, `"podman"`, `"wsl-podman"` for Platform; `"win"`, `"lin"` for HostPlatform.
+- **Compose actions**: `ComposeAction` enum: `Up`, `Down`, `Restart`, `Stop`, `Start`, `Logs`, `Top`, `Ps`.
 
-## Known Inconsistencies
+## Logging
 
-See [tech-debt.md](tech-debt.md) for structural issues and [recommendations.md](recommendations.md) for the action plan. Key things to be aware of when writing code:
+- All sinks (console, file, in-memory) sanitize JWTs and bearer tokens via `SecretCensor`.
+- Serilog file sink with daily rolling, 14-day retention at `%APPDATA%\crosspose\logs\crosspose.log`.
+- Console uses `SanitizingConsoleLoggerProvider` (not the default `SimpleConsole`).
+- In-memory store is a thread-safe `ConcurrentQueue` (1000-line cap) with `OnWrite` event.
 
-- **MVVM**: Doctor.Gui uses `DependencyObject`; Gui uses `INotifyPropertyChanged`.
-- **Docker vs Podman output**: Different JSON structures and label formats — see tech-debt.md "Docker vs Podman output format differences" for details.
+## Theme Support
 
-## Logging Format
-
-Console logging uses `SimpleConsole` with:
-- `SingleLine = true`
-- `TimestampFormat = "HH:mm:ss "`
-- `UseUtcTimestamp = false` (local time)
-
-InMemoryLogStore formats as:
-```
-[HH:mm:ss] LogLevel    CategoryName: Message
-```
-
-## Gitignore Notes
-
-- `docker-compose-outputs/` and `**/docker-compose-outputs/` are gitignored — these are generated artifacts from Dekompose.
-- Standard .NET gitignore (bin/, obj/, .vs/, etc.).
-- `.env` files are gitignored.
+GUI projects have `Themes/Colors.Dark.xaml` and `Themes/Colors.Light.xaml` resource dictionaries. Theme is applied at app startup via `App.xaml` merged dictionaries.

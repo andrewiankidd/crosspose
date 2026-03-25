@@ -1,27 +1,23 @@
-# CLAUDE.md
+# CLAUDE.md — Crosspose.Doctor.Gui
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this project.
-
-See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor CLAUDE.md](../Crosspose.Doctor/CLAUDE.md)
+See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor library](../Crosspose.Doctor/CLAUDE.md)
 
 ## Purpose
 
-WPF front-end for Crosspose Doctor. Shows each prerequisite check with status and a per-item Fix button.
+WPF GUI for Doctor. Lists each prerequisite check with status, description, and a per-item Fix button. Re-verifies after fix completes.
 
-## Build and Run
+## Windows
 
-```powershell
-dotnet run --project src/Crosspose.Doctor.Gui
-```
+- **MainWindow** — check list with auto-run on load, Fix buttons, About/Quit menu, double-click for details.
+- **FixWindow** — dialog showing real-time fix output, Copy button for output text.
+- **AboutWindow** — version info.
 
 ## Architecture
 
-- `MainWindow` loads checks via `CheckCatalog.LoadAll()` on `Loaded` event, runs each check, and populates an `ObservableCollection<CheckViewModel>`.
-- `CheckViewModel` uses WPF `DependencyProperty` for data binding (`Name`, `Result`, `IsSuccess`, `IsFixEnabled`).
-- Fix button opens a `FixWindow` dialog that runs `ICheckFix.FixAsync()` and reports the result.
-- Targets `net10.0-windows10.0.19041` with WPF (`UseWPF=true`).
+- `CheckViewModel` uses `DependencyProperty` (not `INotifyPropertyChanged`).
+- Loads checks via `CheckCatalog.LoadAll()` with settings from `DoctorSettings.Load()`.
+- Dark/light theme support via `Themes/Colors.Dark.xaml` and `Colors.Light.xaml`.
 
 ## Dependencies
 
-- `Crosspose.Core` — for `ProcessRunner` and logging.
-- `Crosspose.Doctor` — for `CheckCatalog` and `ICheckFix` implementations.
+- `Crosspose.Core`, `Crosspose.Doctor`
