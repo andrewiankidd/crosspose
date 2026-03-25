@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace Crosspose.Core.Orchestration;
 
-public sealed class DockerContainerRunner : ContainerPlatformRunnerBase
+public class DockerContainerRunner : ContainerPlatformRunnerBase
 {
     public DockerContainerRunner(ProcessRunner runner) : base("docker", runner)
     {
@@ -163,7 +163,16 @@ public sealed class DockerContainerRunner : ContainerPlatformRunnerBase
             var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var line in lines)
             {
-                var doc = JsonDocument.Parse(line);
+                JsonDocument? doc = null;
+                try
+                {
+                    doc = JsonDocument.Parse(line);
+                }
+                catch
+                {
+                    // Skip malformed lines — docker can emit non-JSON warnings/errors
+                    continue;
+                }
                 yield return doc.RootElement;
             }
         }

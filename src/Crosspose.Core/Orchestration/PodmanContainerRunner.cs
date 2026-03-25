@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace Crosspose.Core.Orchestration;
 
-public sealed class PodmanContainerRunner : ContainerPlatformRunnerBase
+public class PodmanContainerRunner : ContainerPlatformRunnerBase
 {
     public PodmanContainerRunner(ProcessRunner runner, bool runInsideWsl = true, string? wslDistribution = null)
         : base(runInsideWsl ? "wsl" : "podman", runner)
@@ -124,7 +124,7 @@ public sealed class PodmanContainerRunner : ContainerPlatformRunnerBase
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Podman parse failed: {ex}");
+            Runner.LogWarning(ex, "Failed to parse podman ps JSON output");
         }
 
         if (containers.Count > 0 || string.IsNullOrWhiteSpace(result.StandardOutput))
