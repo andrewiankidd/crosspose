@@ -133,7 +133,7 @@ public sealed class OciSourceClient : ISourceClient
     private static string NormalizeUrl(string url) =>
         url.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? url : "https://" + url;
 
-    private static IReadOnlyList<string> ParseRepositories(string json)
+    private IReadOnlyList<string> ParseRepositories(string json)
     {
         try
         {
@@ -148,8 +148,7 @@ public sealed class OciSourceClient : ISourceClient
         }
         catch (Exception ex)
         {
-            // Log parse issues for visibility
-            System.Diagnostics.Debug.WriteLine($"OCI repo parse failed: {ex.Message}");
+            Logger.LogWarning(ex, "Failed to parse OCI repository listing");
         }
         return Array.Empty<string>();
     }
