@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Logging;
 
-namespace Dekompose.Services;
+namespace Crosspose.Dekompose.Services;
 
 /// <summary>
 /// Temporary writer that keeps the output folder layout and documents how to transition

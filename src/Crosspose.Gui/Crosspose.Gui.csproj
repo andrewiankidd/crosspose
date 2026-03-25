@@ -37,13 +37,19 @@
     <Content Include="..\\Crosspose.Doctor.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Doctor.Gui.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\\Crosspose.Doctor.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Doctor.*">
+    <Content Include="..\\Crosspose.Doctor.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Doctor.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\\Crosspose.Doctor.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Doctor.pdb">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\\Crosspose.Dekompose.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Dekompose.Gui.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\\Crosspose.Dekompose.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Dekompose.*">
+    <Content Include="..\\Crosspose.Dekompose.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Dekompose.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\\Crosspose.Dekompose.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Dekompose.pdb">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
