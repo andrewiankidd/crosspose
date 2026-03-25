@@ -14,7 +14,7 @@ using YamlDotNet.RepresentationModel;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
-namespace Dekompose.Services;
+namespace Crosspose.Dekompose.Services;
 
 public sealed class ComposeGenerator
 {

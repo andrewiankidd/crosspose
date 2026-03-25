@@ -3,7 +3,7 @@ using System.IO.Compression;
 using Crosspose.Core.Configuration;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging;
-using Dekompose.Services;
+using Crosspose.Dekompose.Services;
 using Microsoft.Extensions.Logging;
 
 DekomposeOptions options;

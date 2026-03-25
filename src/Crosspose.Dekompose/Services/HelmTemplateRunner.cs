@@ -2,7 +2,7 @@ using System.Globalization;
 using Crosspose.Core.Diagnostics;
 using Microsoft.Extensions.Logging;
 
-namespace Dekompose.Services;
+namespace Crosspose.Dekompose.Services;
 
 public sealed class HelmTemplateRunner
 {
