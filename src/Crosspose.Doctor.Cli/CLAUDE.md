@@ -1,21 +1,17 @@
-# CLAUDE.md
+# CLAUDE.md — Crosspose.Doctor.Cli
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this project.
-
-See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor library CLAUDE.md](../Crosspose.Doctor/CLAUDE.md)
+See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor library](../Crosspose.Doctor/CLAUDE.md)
 
 ## Purpose
 
-Thin CLI entry point for Crosspose Doctor. Parses `--fix`/`--help` args, iterates checks from `CheckCatalog`, and prints results.
+Thin CLI entry point for Doctor. Iterates checks from `CheckCatalog`, prints results, optionally applies fixes. Persists additional check state to `DoctorSettings`.
 
-## Build and Run
+## Arguments
 
-```powershell
-dotnet run --project src/Crosspose.Doctor.Cli             # Check only
-dotnet run --project src/Crosspose.Doctor.Cli -- --fix     # Check + attempt fixes
-```
+- `--fix`, `-f` — attempt automated fixes for failed checks.
+- `--enable-additional <key>` — enable an additional check (e.g., `azure-acr-auth-win:myregistry.azurecr.io`).
+- `--help`, `--version`
 
 ## Dependencies
 
-- `Crosspose.Core` — for `ProcessRunner`, `ShellDetection`, and logging.
-- `Crosspose.Doctor` — for `CheckCatalog` and `ICheckFix` implementations.
+- `Crosspose.Core`, `Crosspose.Doctor`

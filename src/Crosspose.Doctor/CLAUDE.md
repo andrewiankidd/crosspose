@@ -1,35 +1,39 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this project.
+# CLAUDE.md — Crosspose.Doctor
 
 See also: [root CLAUDE.md](../../CLAUDE.md)
 
 ## Purpose
 
-Prerequisite check library (like `flutter doctor`). Contains the check/fix interface, all check implementations, and the check catalog. Used by both `Crosspose.Doctor.Cli` and `Crosspose.Doctor.Gui`.
+Prerequisite check library. Contains the `ICheckFix` interface, all check implementations, `CheckCatalog`, and `DoctorSettings`. Used by `Crosspose.Doctor.Cli`, `Crosspose.Doctor.Gui`, and `Crosspose.Cli` (for pre-compose validation).
 
 ## ICheckFix Interface
 
-All checks implement `ICheckFix` (`Checks/ICheckFix.cs`):
-- `Name` — display name for the check
-- `CanFix` — whether automated remediation is available
-- `RunAsync(ProcessRunner, ILogger, CancellationToken)` → `CheckResult`
-- `FixAsync(ProcessRunner, ILogger, CancellationToken)` → `FixResult`
+```csharp
+string Name { get; }
+string Description { get; }
+bool IsAdditional { get; }
+string AdditionalKey { get; }
+bool CanFix { get; }
+Task<CheckResult> RunAsync(ProcessRunner, ILogger, CancellationToken);
+Task<FixResult> FixAsync(ProcessRunner, ILogger, CancellationToken);
+```
 
-## Check Catalog
+## Built-in Checks (CheckCatalog)
 
-`CheckCatalog.LoadAll()` returns checks in execution order:
-1. **DockerComposeCheck** — tries `docker compose version`, falls back to `docker-compose --version`. Fix: `winget install Docker.DockerDesktop`.
-2. **WslCheck** — runs `wsl --status`. Fix: `wsl --install`.
-3. **CrossposeWslCheck** — verifies a dedicated `crosspose-data` Alpine WSL distro exists. Fix: exports Alpine, imports as `crosspose-data`, creates a user.
-4. **HelmCheck** — runs `helm version --short`. Fix: `winget install Helm.Helm`.
+DockerCompose, DockerRunning, DockerWindowsMode, WSL, WslMemoryLimit, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli.
+
+## Additional Checks (enabled via config or `--enable-additional`)
+
+- `azure-acr-auth-win:<registry>` / `azure-acr-auth-lin:<registry>` — ACR auth for Windows/Linux.
+- `port-proxy:<port>@<network>` — Windows `netsh` port proxy for Docker↔WSL bridging.
 
 ## Adding a New Check
 
-1. Create a class implementing `ICheckFix` in `Checks/`.
-2. Add it to the array in `CheckCatalog.LoadAll()`.
-3. Both Doctor.Cli and Doctor.Gui will automatically pick it up.
+1. Implement `ICheckFix` in `Checks/`.
+2. Add to the list in `CheckCatalog.LoadAll()`.
+3. If it's an additional check, set `IsAdditional = true` and provide an `AdditionalKey`.
 
 ## Dependencies
 
-- `Crosspose.Core` — for `ProcessRunner` and logging.
+- `Crosspose.Core` — for `ProcessRunner`, `CrossposeEnvironment`, `AppDataLocator`.
+- `YamlDotNet`, `Tomlyn` — for config/manifest parsing.

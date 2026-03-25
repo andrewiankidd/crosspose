@@ -1,40 +1,60 @@
 # Tech Debt
 
-Structural issues worth knowing about when working in the codebase. This is a PoC — these are things to address as the project solidifies, not urgent problems.
+Structural issues worth knowing about when working in the codebase. This is a PoC — these are cleanup items, not urgent problems.
+
+---
+
+### 18 bare catch blocks across the codebase
+
+Files: `ComposeOrchestrator.cs`, `AppDataLocator.cs`, `CrossposeConfigurationStore.cs`, `DeploymentMetadataStore.cs`, `ComposeProjectLoader.cs`, `WindowsNatUtilities.cs`, `OciSourceClient.cs`, `SourceNameGenerator.cs`, `Program.cs` (Cli + Dekompose.Cli), `MainWindow.xaml.cs` (Gui + Dekompose.Gui), `AddRepoWindow.xaml.cs`, `App.xaml.cs`.
+
+Most are intentional (best-effort parsing, fallback to null), but they make debugging hard. Consider adding `catch (Exception ex) { logger.LogDebug(...) }` or at minimum a comment explaining why the catch is bare.
 
 ---
 
 ### `ProcessRunner` log helpers create tight coupling
 
-`ProcessRunner` has `internal` log wrapper methods (`LogDebug`, `LogWarning`, etc.) that container runners call via `Runner.LogDebug(...)`. This means runners depend on `ProcessRunner` for both execution *and* logging, making them harder to test in isolation.
+**File**: `src/Crosspose.Core/Diagnostics/ProcessRunner.cs:17-21`
+
+Container runners call `Runner.LogDebug(...)` instead of having their own logger. Runners depend on `ProcessRunner` for both execution and logging.
 
 ---
 
 ### `JsonDocument` instances not disposed in container runners
 
-`JsonDocument.Parse()` returns a disposable object holding pooled memory. Docker's `EnumerateJsonElements` uses `yield return` which prevents disposal. Podman's parsing also skips `using`. With the GUI refreshing every 5 seconds, this creates steady memory pressure until GC finalizes.
+`DockerContainerRunner.EnumerateJsonElements` uses `yield return` preventing `JsonDocument` disposal. `PodmanContainerRunner` also skips `using`. With 5-second GUI refresh, undisposed documents create steady memory pressure.
 
-**Files**: `DockerContainerRunner.cs:155-169`, `PodmanContainerRunner.cs:62,118,148`
-
----
-
-### GUI fires redundant parallel requests on every container refresh
-
-`RefreshContainersInternal` runs both `GetContainersDetailedAsync` (JSON, structured) and `GetContainersAsync` (raw text) in parallel. The raw text result is only used for fallback table parsing when JSON returns nothing. In the common case, this doubles docker/podman process spawning every refresh cycle.
-
-**File**: `src/Crosspose.Gui/MainWindow.xaml.cs:104-105`
+**Files**: `DockerContainerRunner.cs:148-170`, `PodmanContainerRunner.cs`
 
 ---
 
-### View models inline in MainWindow.xaml.cs
+### Static `HttpClient` instances (5 locations)
 
-`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow` are defined at the bottom of the 640-line `MainWindow.xaml.cs`. Extracting to a `ViewModels/` folder would improve navigability.
+`HelmClient`, `OciRegistryStore`, `HelmSourceClient`, `OciSourceClient`, `AzureAcrAuthWinCheck` each declare `private static readonly HttpClient Http = new()`. Works fine for a desktop app but prevents configuring timeouts or injecting handlers per-instance.
+
+---
+
+### `CombinedContainerPlatformRunner` hardcoded to two runners
+
+Constructor takes exactly `_docker` and `_podman`. Adding a third runtime requires restructuring.
 
 ---
 
 ### Docker vs Podman output format differences
 
-Not a bug, but important context for anyone modifying the container runners:
-- **JSON structure**: Docker outputs newline-delimited JSON objects; Podman outputs a JSON array. `DockerContainerRunner.EnumerateJsonElements` handles both; `PodmanContainerRunner` assumes array only.
-- **Labels**: Docker returns labels as a comma-separated string (`"key=val,key2=val2"`). Podman returns a JSON object (`{"key":"val"}`). Each runner has different parsing logic.
-- **ID field casing**: Docker uses `"ID"` (uppercase); Podman uses `"Id"` (PascalCase).
+Important context for container runner work:
+- **JSON**: Docker outputs newline-delimited objects; Podman outputs a JSON array.
+- **Labels**: Docker returns comma-separated string; Podman returns JSON object.
+- **ID casing**: Docker `"ID"` (uppercase); Podman `"Id"` (PascalCase).
+
+---
+
+### No test infrastructure
+
+Zero test projects. Key testable units: container runner JSON parsing, Doctor check logic, ComposeGenerator output, ComposeOrchestrator routing.
+
+---
+
+### Doctor.Gui uses `DependencyObject`, Gui uses `INotifyPropertyChanged`
+
+Both are valid WPF patterns but inconsistent. `INotifyPropertyChanged` is more portable if WinUI migration ever happens.
