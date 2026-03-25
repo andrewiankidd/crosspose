@@ -2,17 +2,24 @@
 
 ![logo](assets/logo.png)
 
-Crosspose is a Windows-first toolchain for turning Helm/Kubernetes workloads into runnable Docker Compose stacks and orchestrating them side-by-side on Docker Desktop (Windows containers) and Podman in WSL.
+Crosspose is a Windows-first toolchain for turning Helm/Kubernetes workloads into runnable Docker Compose stacks and orchestrating them side-by-side on Docker Desktop (Windows containers) and Podman in WSL. This repo is the .NET rewrite of the PowerShell prototype in `C:\git\crossposeps`, and follows the multi-project layout style of `C:\git\IdleOps`.
 
 ## Components
-- `src/Crosspose.Dekompose` - CLI that renders Helm charts (or consumes pre-rendered manifests), applies `dekompose.custom-rules`, and emits workload/OS-specific compose files (`docker-compose.<workload>.<os>.yml`).
-- `src/Crosspose.Cli` - CLI wrapper that orchestrates docker + podman compose (`crosspose up`, `crosspose compose ...`) and aggregates container status (`crosspose ps -a`).
-- `src/Crosspose.Doctor` - CLI checklist (like `flutter doctor`) that inspects prerequisites and can attempt fixes (`--fix`). Additional checks (ACR auth, port proxy, etc.) are persisted in `crosspose.yml` when needed.
-- `src/Crosspose.Doctor.Gui` - WPF UI for Doctor that shows check status with per-item Fix buttons.
-- `src/Crosspose.Dekompose.Gui` - WPF front-end for Dekompose workflows (chart selection, rendering, output generation).
-- `src/Crosspose.Gui` - WPF desktop shell with container dashboard, logs, and tool launchers for Doctor/Dekompose.
-- `src/Crosspose.Ui` - Shared WPF controls and styles for the desktop apps.
-- `src/Crosspose.Core` - Shared configuration, orchestration, logging, and process runner utilities.
+
+Libraries hold reusable logic; `.Cli`/`.Gui` projects are thin entry points.
+
+- `src/Crosspose.Core` – Shared infrastructure: process runner, container runtime abstractions, logging.
+- `src/Crosspose.Dekompose` – Conversion library: renders Helm charts and will emit workload-split compose files.
+- `src/Crosspose.Dekompose.Cli` – CLI entry point for Dekompose.
+- `src/Crosspose.Cli` – Unified CLI for container operations (`crosspose ps -a`, `crosspose compose ...`).
+- `src/Crosspose.Doctor` – Prerequisite check library (like `flutter doctor`): docker compose, WSL, helm.
+- `src/Crosspose.Doctor.Cli` – CLI entry point for Doctor. `--fix` attempts automated remediation.
+- `src/Crosspose.Doctor.Gui` – WPF UI for Doctor with per-item Fix buttons.
+- `src/Crosspose.Gui` – Main WPF dashboard: container/image/volume views, launches Doctor.Gui via Tools menu.
+
+## References
+- Prototype logic & expected compose output: `C:\git\crossposeps` (see `src/Main.ps1`, `assets\scripts\compose.ps1`, `docker-compose-outputs\*`).
+- Repo layout inspiration: `C:\git\IdleOps`.
 
 ## Quick start
 Prefer the GUI:
@@ -23,31 +30,25 @@ dotnet run --project src/Crosspose.Gui
 If you prefer CLI:
 ```powershell
 # 1) Check prerequisites
-dotnet run --project src/Crosspose.Doctor
+dotnet run --project src/Crosspose.Doctor.Cli
 
 # 2) Attempt automatic fixes (winget/wsl where possible)
-dotnet run --project src/Crosspose.Doctor -- --fix
+dotnet run --project src/Crosspose.Doctor.Cli -- --fix
 
 # 3) Render a chart (or use --manifest to skip helm) and scaffold outputs
-dotnet run --project src/Crosspose.Dekompose -- --chart C:\path\to\chart --values C:\path\to\values.yaml
-# or: dotnet run --project src/Crosspose.Dekompose -- --manifest C:\path\to\rendered.yaml --output C:\temp\dekompose-outputs
+dotnet run --project src/Crosspose.Dekompose.Cli -- --chart C:\path\to\chart --values C:\path\to\values.yaml
+# or: dotnet run --project src/Crosspose.Dekompose.Cli -- --manifest C:\path\to\rendered.yaml --output C:\temp\docker-compose-outputs
 
-# 4) Compose orchestration (runs docker compose + podman compose from the same output)
-dotnet run --project src/Crosspose.Cli -- compose up --dir C:\temp\dekompose-outputs\my-workload --detach
+# 4) Compose orchestration (stub; delegates to PowerShell prototype today)
+dotnet run --project src/Crosspose.Cli -- compose --action status
 
 # 5) View running containers across docker/podman
 dotnet run --project src/Crosspose.Cli -- ps -a
 ```
 
-## Documentation
-- [Docs home](docs/index.md)
-- [Setup](docs/setup.md)
-- [Examples](docs/examples.md)
-- [Portable mode](docs/configuration.md#portable-mode)
-- [Crosspose](docs/crosspose/index.md)
-- [Crosspose.Gui](docs/crosspose.gui/index.md)
-- [Crosspose.Dekompose](docs/crosspose.dekompose/index.md)
-- [Crosspose.Dekompose.Gui](docs/crosspose.dekompose.gui/index.md)
-- [Crosspose.Doctor](docs/crosspose.doctor/index.md)
-- [Crosspose.Doctor.Gui](docs/crosspose.doctor.gui/index.md)
-- [Crosspose.Core](docs/crosspose.core/index.md)
+The `docker-compose-outputs` folder produced by Dekompose includes `TODO.compose-generation.md`, which links back to the PowerShell prototype and lists the next engineering steps to port the converter.
+
+## Roadmap (initial cut)
+- Port workload/OS detection, port assignment, and ConfigMap/Secret handling from `crossposeps` into `Dekompose`.
+- Recreate orchestration behaviors from `assets\scripts\compose.ps1` inside `Crosspose.Cli` (start/stop/restart/status/validate against docker + podman).
+- Add tests for the conversion pipeline and docker/podman command brokering.
