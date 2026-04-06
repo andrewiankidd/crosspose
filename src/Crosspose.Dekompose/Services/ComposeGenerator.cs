@@ -19,6 +19,7 @@ namespace Crosspose.Dekompose.Services;
 public sealed class ComposeGenerator
 {
     private const string NatGatewayPlaceholder = "${NAT_GATEWAY_IP}";
+    private const string WslHostPlaceholder = "${WSL_HOST_IP}";
 
     private readonly ILogger<ComposeGenerator> _logger;
     private readonly Random _rand = new();
@@ -72,6 +73,14 @@ public sealed class ComposeGenerator
         }
 
         var runtimeContext = RuleRuntimeContext.Build(ruleSets, _logger, GetNextInfraHostPort);
+
+        // Register infra service names in the port map so RemapServiceUrls can
+        // rewrite bare hostnames (e.g. "mssql") for cross-OS communication.
+        foreach (var (name, port) in runtimeContext.GetInfraPortMap())
+        {
+            servicePortMap.TryAdd(name, port);
+            _linuxServiceNames.Add(name); // infra runs on Linux/Podman by default
+        }
 
         // Pre-pass 1: register all Service ports (needed by later passes).
         // Pre-pass 2: classify each workload's OS — must run before VirtualService pass so aliases inherit the right OS.
@@ -196,12 +205,48 @@ public sealed class ComposeGenerator
             report["infraResources"] = infraSummary;
         }
 
+        // Register port proxy requirements for cross-OS app service ports.
+        foreach (var (svcName, hostPort) in servicePortMap)
+        {
+            var composeSvc = byWorkload.Values
+                .SelectMany(os => os.Values.SelectMany(svcs => svcs))
+                .FirstOrDefault(s => s.Name.Equals(svcName, StringComparison.OrdinalIgnoreCase));
+            if (composeSvc?.Ports.Count > 0)
+            {
+                foreach (var portSpec in composeSvc.Ports)
+                {
+                    var parts = portSpec.Split(':');
+                    if (parts.Length != 2 ||
+                        !int.TryParse(parts[0], out var hp) ||
+                        !int.TryParse(parts[1], out var cp))
+                        continue;
+
+                    // Forward: Linux services need NAT gateway proxies (Windows → Linux)
+                    if (_linuxServiceNames.Contains(svcName))
+                        runtimeContext.RegisterPortProxyPorts(new[] { portSpec });
+
+                    // Reverse: Windows services need WSL host proxies (Linux → Windows)
+                    if (_windowsServiceNames.Contains(svcName))
+                        runtimeContext.RegisterReversePortProxyPort(cp, hp);
+                }
+            }
+        }
+
         var portProxyRequirements = runtimeContext.GetPortProxyPorts();
         if (portProxyRequirements.Count > 0)
         {
             report["portProxyRequirements"] = portProxyRequirements
                 .OrderBy(kvp => kvp.Key)
                 .Select(kvp => new { port = kvp.Key, connectPort = kvp.Value, network = networkName })
+                .ToList();
+        }
+
+        var reversePortProxyRequirements = runtimeContext.GetReversePortProxyPorts();
+        if (reversePortProxyRequirements.Count > 0)
+        {
+            report["reversePortProxyRequirements"] = reversePortProxyRequirements
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => new { port = kvp.Key, connectPort = kvp.Value })
                 .ToList();
         }
 
@@ -937,15 +982,17 @@ public sealed class ComposeGenerator
         var callerIsLinux = !string.Equals(callerOs, "windows", StringComparison.OrdinalIgnoreCase);
 
         // Choose host based on whether the target service is on a different OS from the caller.
-        // Linux caller → Windows target: use NAT gateway (localhost doesn't cross the WSL boundary).
-        // Windows caller → Linux target: use NAT gateway (rewriteLoopbackHosts will also catch this but
-        //                                explicit here avoids relying on post-processing).
-        // Same-OS: localhost is correct.
-        string HostFor(string svc) =>
-            (_windowsServiceNames.Contains(svc) && callerIsLinux) ||
-            (_linuxServiceNames.Contains(svc) && !callerIsLinux)
-                ? NatGatewayPlaceholder
-                : "localhost";
+        // Windows caller → Linux target: use NAT_GATEWAY_IP (Docker nat gateway → WSL via portproxy).
+        // Linux caller → Windows target: use WSL_HOST_IP (WSL host adapter → Docker via reverse portproxy).
+        // Same-OS: localhost is correct (same compose network).
+        string HostFor(string svc)
+        {
+            if (_windowsServiceNames.Contains(svc) && callerIsLinux)
+                return WslHostPlaceholder;
+            if (_linuxServiceNames.Contains(svc) && !callerIsLinux)
+                return NatGatewayPlaceholder;
+            return "localhost";
+        }
 
         // Rewrite in-cluster Kubernetes service URLs: <svc>.default.svc.cluster.local → localhost:<port>
         // These URLs are cluster-internal and never reachable outside k8s — blank them if not running locally.
@@ -976,6 +1023,26 @@ public sealed class ComposeGenerator
                 }
                 return "http://not-deployed";
             });
+        }
+
+        // Rewrite bare service-name references that point to a service on a different OS.
+        // Same-OS services stay as compose service names (they resolve via Docker/Podman DNS).
+        // Cross-OS services get rewritten to NAT_GATEWAY_IP.
+        foreach (var (svcName, hostPort) in servicePortMap)
+        {
+            var host = HostFor(svcName);
+            // Skip same-OS — the compose service name is the correct hostname.
+            if (host == "localhost") continue;
+
+            if (value.Equals(svcName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = host;
+            }
+            else
+            {
+                var barePattern = $@"(?<![A-Za-z0-9._-]){Regex.Escape(svcName)}(?![A-Za-z0-9._-])";
+                value = Regex.Replace(value, barePattern, host, RegexOptions.IgnoreCase);
+            }
         }
 
         // Apply explicit url-overrides from config (case-insensitive substring replace).
@@ -1017,8 +1084,10 @@ public sealed class ComposeGenerator
 
     private int GetNextHostPort()
     {
-        const int min = 60000;
-        const int max = 65000;
+        // Must stay below Windows dynamic port range (starts at 49152 by default).
+        // Using 30000-39999 to avoid overlap with infra ports (40000-49999).
+        const int min = 30000;
+        const int max = 39999;
         int port;
         do
         {
@@ -1296,8 +1365,10 @@ public sealed class ComposeGenerator
         private readonly ILogger _logger;
         private readonly Dictionary<string, InfraServiceContext> _infra;
         private readonly Dictionary<string, SecretEntry> _secrets;
-        // listen port -> connect (high) port
+        // Forward: listen port -> connect (high) port on NAT gateway (Windows → Linux)
         private readonly Dictionary<int, int> _portProxyPorts;
+        // Reverse: listen port -> connect (high) port on WSL host interface (Linux → Windows)
+        private readonly Dictionary<int, int> _reversePortProxyPorts;
         private readonly HashSet<string> _windowsWorkloads;
         private readonly List<string> _localServicePatterns;
         private readonly List<(string From, string To)> _urlOverrides;
@@ -1309,6 +1380,7 @@ public sealed class ComposeGenerator
             _infra = new Dictionary<string, InfraServiceContext>(StringComparer.OrdinalIgnoreCase);
             _secrets = new Dictionary<string, SecretEntry>(StringComparer.OrdinalIgnoreCase);
             _portProxyPorts = new Dictionary<int, int>();
+            _reversePortProxyPorts = new Dictionary<int, int>();
             _windowsWorkloads = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             _localServicePatterns = new List<string>();
             _urlOverrides = new List<(string, string)>();
@@ -1670,6 +1742,33 @@ public sealed class ComposeGenerator
             return referenced;
         }
 
+        /// <summary>
+        /// Returns infra service name → first container port mappings so that
+        /// <see cref="RemapServiceUrls"/> can rewrite bare infra hostnames
+        /// (e.g. "mssql") to the correct host for cross-OS communication.
+        /// </summary>
+        public IReadOnlyDictionary<string, int> GetInfraPortMap()
+        {
+            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var infra in _infra.Values)
+            {
+                foreach (var portSpec in infra.Ports)
+                {
+                    // Format: "hostPort:containerPort"
+                    var parts = portSpec.Split(':');
+                    if (parts.Length == 2 &&
+                        int.TryParse(parts[0], out var hostPort) &&
+                        int.TryParse(parts[1], out var containerPort))
+                    {
+                        if (!map.ContainsKey(infra.Name))
+                            map[infra.Name] = containerPort; // use container port for service identity
+                        break;
+                    }
+                }
+            }
+            return map;
+        }
+
         public IReadOnlyCollection<string> GetInfraNamesForOs(bool isWindows)
         {
             return _infra.Values
@@ -1754,8 +1853,17 @@ public sealed class ComposeGenerator
             }
         }
 
-        // Returns listenPort -> connectPort mapping
+        // Returns listenPort -> connectPort mapping (forward: NAT gateway, Windows → Linux)
         public IReadOnlyDictionary<int, int> GetPortProxyPorts() => _portProxyPorts;
+
+        // Returns listenPort -> connectPort mapping (reverse: WSL host, Linux → Windows)
+        public IReadOnlyDictionary<int, int> GetReversePortProxyPorts() => _reversePortProxyPorts;
+
+        public void RegisterReversePortProxyPort(int containerPort, int hostPort)
+        {
+            if (containerPort > 0 && hostPort > 0)
+                _reversePortProxyPorts.TryAdd(containerPort, hostPort);
+        }
 
         public IList<object> GetInfraSummaries()
         {

@@ -31,7 +31,8 @@ public static class CheckCatalog
             new AzureCliCheck(),
             new PodmanHealthcheckRunnerCheck(),
             new PodmanCreatedContainerCheck(),
-            new PodmanContainerAutohealCheck()
+            new PodmanContainerAutohealCheck(),
+            new WslToWindowsFirewallCheck()
         };
 
         foreach (var key in enabled)

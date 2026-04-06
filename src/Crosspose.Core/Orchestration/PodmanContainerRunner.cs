@@ -42,11 +42,23 @@ public class PodmanContainerRunner : ContainerPlatformRunnerBase
         // (The previous "--exec sudo" accidentally found Windows 11's sudo.exe via
         // the Windows PATH that --exec inherits, which is not reliable.)
         builder.Add("--");
+
+        // Inject environment variables into WSL via env prefix — Windows process
+        // env vars don't automatically propagate into WSL.
+        if (environment is { Count: > 0 })
+        {
+            builder.Add("env");
+            foreach (var (key, value) in environment)
+            {
+                builder.Add($"{key}={value}");
+            }
+        }
+
         builder.Add("podman");
         builder.AddRange(argList);
 
         var argumentStringWsl = string.Join(" ", builder);
-        return Runner.RunAsync("wsl", argumentStringWsl, environment: environment, cancellationToken: cancellationToken);
+        return Runner.RunAsync("wsl", argumentStringWsl, cancellationToken: cancellationToken);
     }
 
     protected override async Task<PlatformCommandResult> ExecuteAndWrapAsync(IEnumerable<string> args, CancellationToken cancellationToken)
