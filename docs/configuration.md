@@ -81,7 +81,7 @@ Each rule is matched against the chart name (glob semantics). The rule can decla
 
 - `infra`: Containers Dekompose should scaffold in addition to the chart workloads. Infra definitions support `image`, `environment`, `command`, `volumes`, `os`, and `ports` just like compose. Host ports automatically trigger a `port-proxy:<listenPort>:<connectPort>@<network>` Doctor check so the Windows host forwards traffic from Docker to Podman.
 - `secretKeyRefs`: Hierarchical namespaces (for example `keyvault`, `split-io`) that contain literal or file secrets. Secrets support `convert_from_base64` for binary blobs, and placeholders like `{{INFRA[MSSQL].ENVIRONMENT[SA_PASSWORD]}}` resolve to the infra values declared above. Use `{{INFRA[MSSQL].HOSTNAME}}` to point workloads at the right infra endpoint regardless of whether the workload runs in Docker (Windows) or Podman (WSL). If a value begins with a token (for example `value: "{{INFRA[MSSQL].HOSTNAME}},1433"`), wrap it in quotes; YAML plain scalars cannot start with `{`.
-- `env`: (See the [Crosspose.Dekompose doc](crosspose.dekompose/index.md)) list of environment rewrite rules that target the infra definitions.
+- `env`: (See the [Crosspose.Dekompose doc](crosspose.dekompose/README.md)) list of environment rewrite rules that target the infra definitions.
 
 ### `doctor.additional-checks`
 

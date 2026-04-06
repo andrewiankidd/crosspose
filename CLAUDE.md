@@ -102,8 +102,8 @@ The [.context/](.context/) directory contains detailed LLM-focused reference fil
 ## Documentation
 
 The [docs/](docs/) directory contains user-facing documentation:
-- [docs/index.md](docs/index.md) — overview, rationale, project links
+- [docs/README.md](docs/README.md) — overview, rationale, project links
 - [docs/setup.md](docs/setup.md) — prerequisites and installation
 - [docs/configuration.md](docs/configuration.md) — `crosspose.yml` schema, portable mode
 - [docs/examples.md](docs/examples.md) — usage examples
-- Per-project docs under `docs/<project>/index.md`
+- Per-project docs under `docs/<project>/README.md`

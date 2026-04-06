@@ -32,5 +32,5 @@ When Infra is enabled, the GUI persists any new Doctor checks (ACR auth, port pr
 The Execution Log panel streams process output from the underlying CLI run. This is the same stdout/stderr you would see in the CLI, captured through `Crosspose.Core.Diagnostics.ProcessRunner`.
 
 ## Related docs
-- [Crosspose.Dekompose](../crosspose.dekompose/index.md) for output layout and rules.
-- [Crosspose.Gui](../crosspose.gui/index.md) for orchestration UI.
+- [Crosspose.Dekompose](../crosspose.dekompose/README.md) for output layout and rules.
+- [Crosspose.Gui](../crosspose.gui/README.md) for orchestration UI.

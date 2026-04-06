@@ -87,5 +87,5 @@ crosspose remove --dir C:\path\to\deployment
 Podman rootless containers reuse the original container's network namespace on `start`/`restart`, meaning DNS entries are stale. Crosspose works around this by issuing `podman compose up --force-recreate -d` whenever a `start` or `restart` action targets the Podman platform. This tears down and recreates the container, giving it a fresh network context.
 
 ## See also
-- [Crosspose.Gui](../crosspose.gui/index.md) for the WPF frontend.
-- [Crosspose.Core](../crosspose.core/index.md) for shared runners and orchestration helpers.
+- [Crosspose.Gui](../crosspose.gui/README.md) for the WPF frontend.
+- [Crosspose.Core](../crosspose.core/README.md) for shared runners and orchestration helpers.

@@ -76,5 +76,5 @@ Crosspose injects `NAT_GATEWAY_IP` during `crosspose up` so Windows containers c
 Secrets declared with `type: file` are written to `secrets/<secret>/..data/<filename>` and copied to `secrets/<secret>/<filename>`. Use `convert_from_base64: false` to keep the raw value.
 
 ## Related docs
-- [Crosspose.Dekompose.Gui](../crosspose.dekompose.gui/index.md) for the WPF front-end.
-- [Crosspose.Core](../crosspose.core/index.md) for shared Helm/OCI helpers and process runner.
+- [Crosspose.Dekompose.Gui](../crosspose.dekompose.gui/README.md) for the WPF front-end.
+- [Crosspose.Core](../crosspose.core/README.md) for shared Helm/OCI helpers and process runner.
