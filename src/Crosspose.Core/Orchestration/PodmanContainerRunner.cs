@@ -37,14 +37,11 @@ public class PodmanContainerRunner : ContainerPlatformRunnerBase
             builder.Add("--distribution");
             builder.Add(_wslDistribution!);
         }
-        builder.Add("--exec");
-
-        var requiresSudo = argList.Count > 0 && string.Equals(argList[0], "compose", StringComparison.OrdinalIgnoreCase);
-        if (requiresSudo)
-        {
-            builder.Add("sudo");
-        }
-
+        // Use "--" (shell invocation) so binaries are resolved via the shell's PATH.
+        // Do not prefix sudo — crosspose-data runs as root, sudo is not installed.
+        // (The previous "--exec sudo" accidentally found Windows 11's sudo.exe via
+        // the Windows PATH that --exec inherits, which is not reliable.)
+        builder.Add("--");
         builder.Add("podman");
         builder.AddRange(argList);
 
@@ -119,7 +116,8 @@ public class PodmanContainerRunner : ContainerPlatformRunnerBase
                     State: state,
                     Ports: ports,
                     Project: project,
-                    HostPlatform: "lin"));
+                    HostPlatform: "lin",
+                    Health: ContainerProcessInfo.ParseHealth(status)));
             }
         }
         catch (Exception ex)

@@ -38,9 +38,11 @@ public sealed class DefinitionDeploymentService
 
         var projectSegment = SanitizeSegment(request.ProjectName);
         var versionSegment = SanitizeSegment(request.Version);
-        if (string.IsNullOrWhiteSpace(versionSegment) || versionSegment.Equals("unknown", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(versionSegment)
+            || versionSegment.Equals("unknown", StringComparison.OrdinalIgnoreCase)
+            || versionSegment.Equals("default", StringComparison.OrdinalIgnoreCase))
         {
-            versionSegment = DateTime.Now.ToString("yyyyMMddHHmmss");
+            versionSegment = DateTime.Now.ToString("yyyyMMddHHmm");
         }
 
         var targetDirectory = Path.Combine(deploymentRoot, projectSegment, versionSegment);
@@ -101,7 +103,7 @@ public sealed class DefinitionDeploymentService
         }
 
         var keys = filtered
-            .Select(entry => PortProxyKey.Format(entry.Port, entry.Network))
+            .Select(entry => PortProxyKey.Format(entry.Port, entry.ConnectPort, entry.Network))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         DoctorCheckRegistrar.EnsureChecks(keys);

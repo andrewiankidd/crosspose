@@ -27,14 +27,42 @@
         <Grid Margin="0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Text="Crosspose Doctor" Foreground="{DynamicResource TextPrimary}" FontSize="20" Margin="16" />
+            <DockPanel Grid.Row="0" Margin="16,16,16,4">
+                <Button x:Name="FixAllButton"
+                        Content="Fix All"
+                        DockPanel.Dock="Right"
+                        IsEnabled="False"
+                        Width="90"
+                        Padding="6,4"
+                        VerticalAlignment="Center"
+                        Click="OnFixAllClick"
+                        Background="{DynamicResource ButtonBackground}"
+                        Foreground="{DynamicResource ButtonForeground}"
+                        BorderBrush="{DynamicResource ButtonBorder}" />
+                <TextBlock Text="Crosspose Doctor" Foreground="{DynamicResource TextPrimary}" FontSize="20" VerticalAlignment="Center" />
+            </DockPanel>
+
+            <Border x:Name="OfflineBanner"
+                    Grid.Row="1"
+                    Visibility="Collapsed"
+                    Background="{DynamicResource SidebarBackground}"
+                    BorderBrush="{DynamicResource BorderBrushColor}"
+                    BorderThickness="0,1,0,1"
+                    Padding="16,6">
+                <TextBlock Foreground="{DynamicResource TextMuted}"
+                           FontSize="12">
+                    <Run FontWeight="SemiBold" Foreground="{DynamicResource StatusWarningFill}">Offline mode active.</Run>
+                    <Run>Connectivity checks (Azure CLI, ACR auth) are suppressed.</Run>
+                </TextBlock>
+            </Border>
 
             <ListView x:Name="ChecksList"
-                      Grid.Row="1"
-                      Margin="12"
+                      Grid.Row="2"
+                      Margin="12,4,12,12"
                       Background="{DynamicResource ListBackground}"
                       Foreground="{DynamicResource TextPrimary}"
                       BorderBrush="{DynamicResource ListBorder}"

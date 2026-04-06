@@ -4,7 +4,7 @@ Deep context files for LLM-assisted development. Each file is self-contained.
 
 | File | What it covers |
 |------|----------------|
-| [overview.md](overview.md) | Project purpose, status, and relationship to the PowerShell prototype |
+| [overview.md](overview.md) | Project purpose and current status |
 | [architecture.md](architecture.md) | Solution structure, dependency graph, namespace map |
 | [conventions.md](conventions.md) | Code patterns, naming, async usage, error handling |
 | [extension-points.md](extension-points.md) | How to add checks, runners, views, pipeline stages |

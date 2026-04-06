@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using Crosspose.Core.Diagnostics;
 using Microsoft.Extensions.Logging;
 
@@ -29,46 +30,63 @@ public sealed class HelmTemplateRunner
             effectiveChart = $"oci://{chartPath}";
         }
 
-        if (effectiveChart.StartsWith("oci://", StringComparison.OrdinalIgnoreCase))
+        IReadOnlyDictionary<string, string>? helmEnv = null;
+        string? tempRegistryConfig = null;
+        try
         {
-            await EnsureOciLoginAsync(effectiveChart, cancellationToken);
-        }
+            if (effectiveChart.StartsWith("oci://", StringComparison.OrdinalIgnoreCase))
+            {
+                (helmEnv, tempRegistryConfig) = await BuildOciAuthEnvAsync(effectiveChart, cancellationToken);
+            }
 
-        var arguments = $"template crosspose \"{effectiveChart}\"";
-        if (!string.IsNullOrWhiteSpace(chartVersion))
+            var arguments = $"template crosspose \"{effectiveChart}\"";
+            if (!string.IsNullOrWhiteSpace(chartVersion))
+            {
+                arguments += $" --version \"{chartVersion}\"";
+            }
+
+            if (!string.IsNullOrWhiteSpace(valuesPath))
+            {
+                arguments += $" --values \"{valuesPath}\"";
+            }
+
+            string? workDir = Directory.Exists(chartPath) ? chartPath : null;
+            var result = await _processRunner.RunAsync("helm", arguments, environment: helmEnv, workingDirectory: workDir, cancellationToken: cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogError("helm template failed with exit code {ExitCode}: {Error}", result.ExitCode, result.StandardError);
+                return new HelmRenderResult(false, manifestPath, false, result.StandardError);
+            }
+
+            await File.WriteAllTextAsync(manifestPath, result.StandardOutput, cancellationToken);
+            _logger.LogInformation("Rendered manifest written to {ManifestPath}", manifestPath);
+            return new HelmRenderResult(true, manifestPath, true, null);
+        }
+        finally
         {
-            arguments += $" --version \"{chartVersion}\"";
+            if (tempRegistryConfig is not null)
+            {
+                try { File.Delete(tempRegistryConfig); } catch { /* best effort */ }
+            }
         }
-
-        if (!string.IsNullOrWhiteSpace(valuesPath))
-        {
-            arguments += $" --values \"{valuesPath}\"";
-        }
-
-        // If the chart path is a local folder, we can use it as the working directory; otherwise leave the default.
-        string? workDir = Directory.Exists(chartPath) ? chartPath : null;
-        var result = await _processRunner.RunAsync("helm", arguments, workingDirectory: workDir, cancellationToken: cancellationToken);
-        if (!result.IsSuccess)
-        {
-            _logger.LogError("helm template failed with exit code {ExitCode}: {Error}", result.ExitCode, result.StandardError);
-            return new HelmRenderResult(false, manifestPath, false, result.StandardError);
-        }
-
-        await File.WriteAllTextAsync(manifestPath, result.StandardOutput, cancellationToken);
-        _logger.LogInformation("Rendered manifest written to {ManifestPath}", manifestPath);
-        return new HelmRenderResult(true, manifestPath, true, null);
     }
 
-    private async Task EnsureOciLoginAsync(string chartRef, CancellationToken cancellationToken)
+    /// <summary>
+    /// Acquires an ACR token and writes a temporary Helm registry config JSON.
+    /// Returns environment variables pointing Helm at that config, bypassing the
+    /// Windows credential store (which fails in non-interactive subprocess sessions).
+    /// </summary>
+    private async Task<(IReadOnlyDictionary<string, string> Env, string TempConfigPath)> BuildOciAuthEnvAsync(
+        string chartRef, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(chartRef, UriKind.Absolute, out var uri) || string.IsNullOrWhiteSpace(uri.Host))
         {
-            return;
+            return (new Dictionary<string, string>(), string.Empty);
         }
 
         var host = uri.Host;
         var registryName = host.Split('.')[0];
-        _logger.LogInformation("Ensuring Helm is logged in to OCI registry {Registry} ({Host})...", registryName, host);
+        _logger.LogInformation("Acquiring ACR token for OCI registry {Registry} ({Host})...", registryName, host);
 
         var tokenResult = await _processRunner.RunAsync(
             await ResolveAzCliAsync(cancellationToken),
@@ -81,19 +99,24 @@ public sealed class HelmTemplateRunner
             throw new InvalidOperationException($"Failed to acquire ACR token for {registryName}");
         }
 
-        var password = tokenResult.StandardOutput.Trim();
-        var loginResult = await _processRunner.RunAsync(
-            "helm",
-            $"registry login {host} --username 00000000-0000-0000-0000-000000000000 --password \"{password}\"",
-            cancellationToken: cancellationToken);
+        var token = tokenResult.StandardOutput.Trim();
 
-        if (!loginResult.IsSuccess)
+        // Build a Docker-compatible registry config JSON with the token inline.
+        // This lets Helm authenticate without touching the Windows credential store.
+        var auth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"00000000-0000-0000-0000-000000000000:{token}"));
+        var configJson = "{\"auths\":{\"" + host + "\":{\"auth\":\"" + auth + "\"}}}";
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"crosspose-helm-auth-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(tempPath, configJson, cancellationToken);
+
+        _logger.LogInformation("Wrote temporary Helm registry config for {Host}", host);
+
+        var env = new Dictionary<string, string>
         {
-            _logger.LogError("Helm registry login failed for {Host}: {Error}", host, loginResult.StandardError);
-            throw new InvalidOperationException($"Helm registry login failed for {host}");
-        }
+            ["HELM_REGISTRY_CONFIG"] = tempPath
+        };
 
-        _logger.LogInformation("Helm registry login succeeded for {Host}", host);
+        return (env, tempPath);
     }
 
     private async Task<string> ResolveAzCliAsync(CancellationToken cancellationToken)

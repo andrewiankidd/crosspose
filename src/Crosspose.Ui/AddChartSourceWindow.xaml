@@ -1,4 +1,4 @@
-<Window x:Class="Crosspose.Dekompose.Gui.AddChartSourceWindow"
+<Window x:Class="Crosspose.Ui.AddChartSourceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Add Chart Source"

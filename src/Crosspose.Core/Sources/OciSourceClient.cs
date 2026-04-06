@@ -406,6 +406,15 @@ public sealed class OciSourceClient : ISourceClient
 
     private async Task<(IReadOnlyList<SourceVersion> Versions, string? Error)> ListAllTagsAsync(string repository, SourceAuth? auth, CancellationToken ct)
     {
+        // Proactively acquire the repo-scoped bearer for ACR so every pagination page
+        // uses it directly instead of round-tripping through a 401 first.
+        if (IsAzureContainerRegistry(SourceUrl) && string.IsNullOrWhiteSpace(auth?.BearerToken))
+        {
+            var bearer = await TryAcquireAcrScopedTokenAsync($"repository:{repository}:metadata_read", ct);
+            if (!string.IsNullOrWhiteSpace(bearer))
+                auth = new SourceAuth(auth?.Username, auth?.Password, bearer);
+        }
+
         var collected = new List<SourceVersion>();
         var encodedRepo = Uri.EscapeDataString(repository);
         var nextUrl = $"{SourceUrl.TrimEnd('/')}/acr/v1/{encodedRepo}/_tags?n=100&orderby=timedesc";

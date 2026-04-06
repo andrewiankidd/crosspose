@@ -6,12 +6,20 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace Crosspose.Core.Deployment;
 
-public sealed record PortProxyRequirement(int Port, string? Network);
+/// <summary>
+/// A port proxy requirement emitted by Dekompose into conversion-report.yaml.
+/// <see cref="Port"/> is the listen port on the NAT gateway (standard well-known port).
+/// <see cref="ConnectPort"/> is the high host port that Podman actually binds to inside WSL2.
+/// </summary>
+public sealed record PortProxyRequirement(int Port, int ConnectPort, string? Network);
 
 internal sealed class PortProxyRequirementEntry
 {
     [YamlMember(Alias = "port")]
     public int Port { get; init; }
+
+    [YamlMember(Alias = "connectPort")]
+    public int ConnectPort { get; init; }
 
     [YamlMember(Alias = "network")]
     public string? Network { get; init; }
@@ -50,7 +58,13 @@ public static class PortProxyRequirementLoader
             return entries
                 .Where(entry => entry.Port > 0)
                 .GroupBy(entry => entry.Port)
-                .Select(group => new PortProxyRequirement(group.Key, group.First().Network))
+                .Select(group =>
+                {
+                    var first = group.First();
+                    // If no connectPort was encoded (legacy report), default to same as listen port
+                    var connectPort = first.ConnectPort > 0 ? first.ConnectPort : first.Port;
+                    return new PortProxyRequirement(group.Key, connectPort, first.Network);
+                })
                 .ToList();
         }
         catch

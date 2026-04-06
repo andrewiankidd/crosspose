@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<CheckViewModel> _items = new();
     private readonly ILoggerFactory _loggerFactory = Crosspose.Core.Logging.CrossposeLoggerFactory.Create(LogLevel.Information);
     private readonly ProcessRunner _runner;
+    private DoctorMonitor? _monitor;
 
     public MainWindow()
     {
@@ -25,17 +26,90 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         var settings = DoctorSettings.Load();
-        var checks = CheckCatalog.LoadAll(settings.AdditionalChecks);
-        foreach (var check in checks)
-        {
-            var vm = new CheckViewModel(check);
-            _items.Add(vm);
 
-            var result = await check.RunAsync(_runner, _loggerFactory.CreateLogger(check.Name), default);
+        if (settings.OfflineMode)
+            OfflineBanner.Visibility = Visibility.Visible;
+
+        var checks = CheckCatalog.LoadAll(settings.AdditionalChecks, offlineMode: settings.OfflineMode);
+        foreach (var check in checks)
+            _items.Add(new CheckViewModel(check));
+
+        if (App.AutoFixMode)
+        {
+            // Sequential path: run once, fix all, close. Used when launched with --auto-fix.
+            foreach (var vm in _items)
+            {
+                var result = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
+                vm.Result = result.Message;
+                vm.IsSuccess = result.IsSuccessful;
+                vm.IsFixEnabled = !result.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
+            }
+            FixAllButton.IsEnabled = _items.Any(vm => vm.IsFixEnabled);
+            await RunAutoFixAsync();
+            return;
+        }
+
+        // Normal operation: start background monitor.
+        // Each check runs immediately then repeats on its own interval.
+        _monitor = new DoctorMonitor(checks, _runner, _loggerFactory);
+        _monitor.CheckUpdated += OnCheckUpdated;
+        _monitor.AutoFixApplied += OnAutoFixApplied;
+        _monitor.Start();
+        FixAllButton.IsEnabled = false;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _monitor?.Dispose();
+        base.OnClosed(e);
+    }
+
+    private void OnCheckUpdated(ICheckFix check, CheckResult result)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            var vm = _items.FirstOrDefault(v => v.Check == check);
+            if (vm is null) return;
             vm.Result = result.Message;
             vm.IsSuccess = result.IsSuccessful;
-            vm.IsFixEnabled = !result.IsSuccessful && check.CanFix;
+            // AutoFix checks are handled by the monitor; no manual Fix button for them.
+            vm.IsFixEnabled = !result.IsSuccessful && check.CanFix && !check.AutoFix;
+            FixAllButton.IsEnabled = _items.Any(v => v.IsFixEnabled);
+        });
+    }
+
+    private void OnAutoFixApplied(ICheckFix check, FixResult fix)
+    {
+        _loggerFactory.CreateLogger(check.Name).LogInformation(
+            "Auto-fix {Status}: {Message}", fix.Succeeded ? "succeeded" : "failed", fix.Message);
+    }
+
+    /// <summary>
+    /// Silently fixes all failing fixable checks then closes the window.
+    /// Called when Doctor is launched with --auto-fix by Crosspose after 'up'.
+    /// </summary>
+    private async Task RunAutoFixAsync()
+    {
+        var fixable = _items.Where(vm => vm.IsFixEnabled).ToList();
+
+        foreach (var vm in fixable)
+        {
+            try
+            {
+                await vm.Check.FixAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
+                var verify = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
+                vm.Result = verify.Message;
+                vm.IsSuccess = verify.IsSuccessful;
+                vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
+            }
+            catch
+            {
+                // best-effort — don't block shutdown on a single failed fix
+            }
         }
+
+        await Task.Delay(500);
+        Close();
     }
 
     private async void OnFixClick(object sender, RoutedEventArgs e)
@@ -49,15 +123,40 @@ public partial class MainWindow : Window
         {
             vm.Result = dialog.FinalMessage;
             vm.IsSuccess = dialog.Success;
-            vm.IsFixEnabled = !dialog.Success;
+            vm.IsFixEnabled = !dialog.Success && !vm.Check.AutoFix;
             if (dialog.Success)
             {
                 var verify = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
                 vm.Result = verify.Message;
                 vm.IsSuccess = verify.IsSuccessful;
-                vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix;
+                vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
             }
         }
+
+        FixAllButton.IsEnabled = _items.Any(vm => vm.IsFixEnabled);
+    }
+
+    private async void OnFixAllClick(object sender, RoutedEventArgs e)
+    {
+        var fixable = _items.Where(vm => vm.IsFixEnabled).ToList();
+        if (fixable.Count == 0) return;
+
+        FixAllButton.IsEnabled = false;
+
+        var dialog = new FixAllWindow(fixable, _loggerFactory);
+        dialog.Owner = this;
+        dialog.ShowDialog();
+
+        // Re-run every check so state reflects what Fix All changed
+        foreach (var vm in _items)
+        {
+            var verify = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
+            vm.Result = verify.Message;
+            vm.IsSuccess = verify.IsSuccessful;
+            vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
+        }
+
+        FixAllButton.IsEnabled = _items.Any(vm => vm.IsFixEnabled);
     }
 
     private void OnAboutClick(object sender, RoutedEventArgs e)
@@ -74,18 +173,11 @@ public partial class MainWindow : Window
     private static string GetVersion() =>
         System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
 
-    private void OnQuitClick(object sender, RoutedEventArgs e)
-    {
-        Close();
-    }
+    private void OnQuitClick(object sender, RoutedEventArgs e) => Close();
 
     private void OnChecksListDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (ChecksList.SelectedItem is not CheckViewModel vm)
-        {
-            return;
-        }
-
+        if (ChecksList.SelectedItem is not CheckViewModel vm) return;
         var status = vm.IsSuccess ? "Success" : "Needs Attention";
         var message = $"{vm.Description}\n\nResult ({status}):\n{vm.Result}";
         MessageBox.Show(this, message, "Crosspose Doctor", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -99,8 +191,8 @@ public class CheckViewModel : DependencyObject
         Check = check;
         Name = check.Name;
         Description = check.Description;
-        Result = "Pending...";
-        IsFixEnabled = check.CanFix;
+        Result = "Checking...";
+        IsFixEnabled = false; // Populated after first check run
     }
 
     public ICheckFix Check { get; }

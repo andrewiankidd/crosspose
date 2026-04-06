@@ -60,6 +60,44 @@ public abstract class ContainerPlatformRunnerBase : VirtualizationPlatformRunner
         return result.IsSuccess;
     }
 
+    public virtual async Task<bool> PruneImagesAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await ExecAsync(new[] { "image", "prune", "-af" }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.IsSuccess;
+    }
+
+    public virtual async Task<bool> PruneVolumesAsync(CancellationToken cancellationToken = default)
+    {
+        var result = await ExecAsync(new[] { "volume", "prune", "-f" }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.IsSuccess;
+    }
+
+    public virtual async Task<ContainerInspectResult?> InspectContainerAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var result = await ExecAsync(new[] { "inspect", id }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!result.IsSuccess || string.IsNullOrWhiteSpace(result.StandardOutput)) return null;
+        try { return ContainerInspectParser.ParseInspect(result.StandardOutput.Trim()); }
+        catch { return null; }
+    }
+
+    public virtual async Task<ContainerStatsResult?> GetContainerStatsAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var result = await ExecAsync(new[] { "stats", "--no-stream", "--format", "json", id }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var output = (result.StandardOutput + result.StandardError).Trim();
+        if (string.IsNullOrWhiteSpace(output)) return null;
+        try { return ContainerInspectParser.ParseStats(output); }
+        catch { return null; }
+    }
+
+    public virtual async Task<ProcessResult> ExecInContainerAsync(string id, string commandLine, CancellationToken cancellationToken = default)
+    {
+        var parts = new[] { "exec", id }.Concat(commandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return await ExecAsync(parts, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    public virtual Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default) =>
+        ExecAsync(new[] { "logs", "--tail", tail.ToString(), id }, cancellationToken: cancellationToken);
+
     protected virtual async Task<PlatformCommandResult> ExecuteAndWrapAsync(IEnumerable<string> args, CancellationToken cancellationToken)
     {
         var result = await ExecAsync(args, cancellationToken: cancellationToken).ConfigureAwait(false);

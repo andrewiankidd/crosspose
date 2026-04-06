@@ -10,6 +10,7 @@
 - **Manual DI**: No DI container — dependency graphs constructed manually in Program.cs / window constructors.
 - **Configuration centralized**: Everything reads from `crosspose.yml` via `CrossposeConfigurationStore` / `CrossposeEnvironment`.
 - **Portable mode**: `.portable` file beside exe switches all data to `.\AppData\crosspose\`.
+- **Offline mode**: `offline-mode: true` in `crosspose.yml` suppresses `RequiresConnectivity` Doctor checks. Toggle via Tools menu in Crosspose.Gui.
 
 ## Async Patterns
 
@@ -44,4 +45,4 @@
 
 ## Theme Support
 
-GUI projects have `Themes/Colors.Dark.xaml` and `Themes/Colors.Light.xaml` resource dictionaries. Theme is applied at app startup via `App.xaml` merged dictionaries.
+GUI projects have `Themes/Colors.Dark.xaml` and `Themes/Colors.Light.xaml` resource dictionaries. Theme can be switched at runtime (not just at startup) by reordering `MergedDictionaries` — the last entry wins for `DynamicResource` lookups. Preference is persisted to `compose.gui.dark-mode` in `crosspose.yml`.

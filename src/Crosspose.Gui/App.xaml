@@ -9,7 +9,18 @@
                 <!-- Dark first, light last so light is the default -->
                 <ResourceDictionary Source="Themes/Colors.Dark.xaml" />
                 <ResourceDictionary Source="Themes/Colors.Light.xaml" />
+                <ResourceDictionary Source="pack://application:,,,/Crosspose.Ui;component/GroupedListViewResources.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!-- Menu items: colours come from system key overrides in theme files -->
+            <Style TargetType="MenuItem">
+                <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource SidebarBackground}" />
+                <Style.Triggers>
+                    <Trigger Property="IsHighlighted" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
             <!-- Minimal: use default buttons; opt-in green via Tag="AccentPositive" -->
             <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                 <Style.Triggers>

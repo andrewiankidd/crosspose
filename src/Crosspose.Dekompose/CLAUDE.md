@@ -10,7 +10,6 @@ Helm-to-Compose conversion library. Renders Helm charts and generates Docker Com
 
 - **`HelmTemplateRunner`** — shells out to `helm template`, writes rendered YAML.
 - **`ComposeGenerator`** — parses rendered K8s manifests, detects workload OS, assigns ports, translates ConfigMaps/Secrets, emits per-workload compose files. Supports infrastructure scaffolding (e.g. MSSQL) and service port remapping via `DekomposeRuleSet` config.
-- **`ComposeStubWriter`** — legacy placeholder writer (used before ComposeGenerator was implemented).
 
 ## Dependencies
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using Crosspose.Core.Diagnostics;
+using Crosspose.Core.Logging.Internal;
 using Crosspose.Doctor.Checks;
 using Microsoft.Extensions.Logging;
 
@@ -28,7 +29,7 @@ public partial class FixWindow : Window
     {
         var runner = new ProcessRunner(_loggerFactory.CreateLogger<ProcessRunner>())
         {
-            OutputHandler = line => AppendLine(line)
+            OutputHandler = line => AppendLine(SecretCensor.Sanitize(line))
         };
 
         AppendLine("Starting fix...");

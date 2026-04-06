@@ -1,3 +1,5 @@
+using Crosspose.Core.Diagnostics;
+
 namespace Crosspose.Core.Orchestration;
 
 public interface IContainerPlatformRunner : IVirtualizationPlatformRunner
@@ -13,4 +15,12 @@ public interface IContainerPlatformRunner : IVirtualizationPlatformRunner
     Task<bool> RemoveContainerAsync(string id, CancellationToken cancellationToken = default);
     Task<bool> RemoveImageAsync(string id, CancellationToken cancellationToken = default);
     Task<bool> RemoveVolumeAsync(string name, CancellationToken cancellationToken = default);
+    /// <summary>Removes all images not referenced by any container (docker/podman image prune -af).</summary>
+    Task<bool> PruneImagesAsync(CancellationToken cancellationToken = default);
+    /// <summary>Removes all volumes not referenced by any container (docker/podman volume prune -f).</summary>
+    Task<bool> PruneVolumesAsync(CancellationToken cancellationToken = default);
+    Task<ContainerInspectResult?> InspectContainerAsync(string id, CancellationToken cancellationToken = default);
+    Task<ContainerStatsResult?> GetContainerStatsAsync(string id, CancellationToken cancellationToken = default);
+    Task<ProcessResult> ExecInContainerAsync(string id, string commandLine, CancellationToken cancellationToken = default);
+    Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default);
 }

@@ -7,4 +7,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FluentIcons.Wpf" Version="2.0.316" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Crosspose.Core\Crosspose.Core.csproj" />
+    <ProjectReference Include="..\Crosspose.Doctor\Crosspose.Doctor.csproj" />
+  </ItemGroup>
+
 </Project>

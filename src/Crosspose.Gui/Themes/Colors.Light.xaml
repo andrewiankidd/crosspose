@@ -27,4 +27,24 @@
     <SolidColorBrush x:Key="ErrorBorder" Color="#EF4444" />
     <SolidColorBrush x:Key="ErrorBackground" Color="#FEE2E2" />
     <SolidColorBrush x:Key="ErrorText" Color="#991B1B" />
+
+    <!-- Doctor status indicator -->
+    <SolidColorBrush x:Key="StatusReadyFill" Color="#16A34A" />
+    <SolidColorBrush x:Key="StatusWarningFill" Color="#D97706" />
+    <SolidColorBrush x:Key="StatusNeutralFill" Color="#9CA3AF" />
+
+    <!-- Menu system color overrides (WPF templates read these directly) -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}"          Color="#EAEAEA" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBarBrushKey}"       Color="#EAEAEA" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}"      Color="#111827" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuHighlightBrushKey}" Color="#D0D5DD" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#111827" />
+    <!-- ToolTip system color overrides -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.InfoBrushKey}"          Color="#F8F9FB" />
+    <SolidColorBrush x:Key="{x:Static SystemColors.InfoTextBrushKey}"      Color="#111827" />
+
+    <!-- Loading overlay -->
+    <SolidColorBrush x:Key="OverlayBackdrop" Color="#88000000" />
+    <SolidColorBrush x:Key="OverlayCard" Color="#F2FFFFFF" />
+    <SolidColorBrush x:Key="OverlayForeground" Color="#111827" />
 </ResourceDictionary>

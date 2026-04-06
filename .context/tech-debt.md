@@ -1,12 +1,12 @@
 # Tech Debt
 
-Structural issues worth knowing about when working in the codebase. This is a PoC — these are cleanup items, not urgent problems.
+Structural issues worth knowing about when working in the codebase. These are cleanup items, not urgent problems.
 
 ---
 
-### 18 bare catch blocks across the codebase
+### Bare catch blocks across the codebase
 
-Files: `ComposeOrchestrator.cs`, `AppDataLocator.cs`, `CrossposeConfigurationStore.cs`, `DeploymentMetadataStore.cs`, `ComposeProjectLoader.cs`, `WindowsNatUtilities.cs`, `OciSourceClient.cs`, `SourceNameGenerator.cs`, `Program.cs` (Cli + Dekompose.Cli), `MainWindow.xaml.cs` (Gui + Dekompose.Gui), `AddRepoWindow.xaml.cs`, `App.xaml.cs`.
+Files: `ComposeOrchestrator.cs`, `AppDataLocator.cs`, `CrossposeConfigurationStore.cs`, `DeploymentMetadataStore.cs`, `ComposeProjectLoader.cs`, `WindowsNatUtilities.cs`, `OciSourceClient.cs`, `SourceNameGenerator.cs`, `Program.cs` (Cli + Dekompose.Cli), `MainWindow.xaml.cs` (Gui + Dekompose.Gui), `AddChartSourceWindow.xaml.cs`, `App.xaml.cs`.
 
 Most are intentional (best-effort parsing, fallback to null), but they make debugging hard. Consider adding `catch (Exception ex) { logger.LogDebug(...) }` or at minimum a comment explaining why the catch is bare.
 
@@ -49,12 +49,12 @@ Important context for container runner work:
 
 ---
 
-### No test infrastructure
-
-Zero test projects. Key testable units: container runner JSON parsing, Doctor check logic, ComposeGenerator output, ComposeOrchestrator routing.
-
----
-
 ### Doctor.Gui uses `DependencyObject`, Gui uses `INotifyPropertyChanged`
 
 Both are valid WPF patterns but inconsistent. `INotifyPropertyChanged` is more portable if WinUI migration ever happens.
+
+---
+
+### `MainWindow.xaml.cs` (Crosspose.Gui) is very large
+
+View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, `DeploymentRow`, `ChartFileRow`, `ProjectEntry`) are defined inline. These should move to a `ViewModels/` folder as the file grows.

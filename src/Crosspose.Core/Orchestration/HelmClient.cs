@@ -119,6 +119,53 @@ public sealed class HelmClient
         return result.StandardOutput ?? string.Empty;
     }
 
+    /// <summary>
+    /// Pulls a chart tgz into <paramref name="destinationDir"/> and returns the path of the
+    /// downloaded file, or null if the pull failed.
+    /// </summary>
+    public async Task<string?> PullAsync(string chartRef, string? version, string destinationDir, Sources.SourceAuth? auth = null, CancellationToken cancellationToken = default)
+    {
+        Directory.CreateDirectory(destinationDir);
+        var before = Directory.GetFiles(destinationDir, "*.tgz").ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Both Docker's credsStore ("desktop") and Helm's credsStore ("wincred") route credential
+        // lookups through Windows Credential Manager, which fails in subprocess sessions with
+        // "A specified logon session does not exist". Bypass entirely by writing a temp registry
+        // config with no credsStore and pointing HELM_REGISTRY_CONFIG at it.
+        Dictionary<string, string>? env = null;
+        string? tempConfig = null;
+        if (chartRef.StartsWith("oci://", StringComparison.OrdinalIgnoreCase) && auth is not null)
+        {
+            var password = auth.BearerToken ?? auth.Password;
+            var username = auth.Username ?? (string.IsNullOrWhiteSpace(password) ? null : "00000000-0000-0000-0000-000000000000");
+            if (!string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(password))
+            {
+                var host = new Uri("https://" + chartRef["oci://".Length..]).Host;
+                var b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{username}:{password}"));
+                var json = "{\"auths\":{\"" + host + "\":{\"auth\":\"" + b64 + "\"}}}";
+                tempConfig = Path.Combine(Path.GetTempPath(), $"helm-reg-{Guid.NewGuid():N}.json");
+                await File.WriteAllTextAsync(tempConfig, json, cancellationToken);
+                env = new Dictionary<string, string> { ["HELM_REGISTRY_CONFIG"] = tempConfig };
+            }
+        }
+
+        var args = $"pull \"{chartRef}\" --destination \"{destinationDir}\"";
+        if (!string.IsNullOrWhiteSpace(version))
+            args += $" --version \"{version}\"";
+
+        var result = await _runner.RunAsync(HelmCommand, args, environment: env, cancellationToken: cancellationToken);
+        if (tempConfig is not null) try { File.Delete(tempConfig); } catch { }
+        if (!result.IsSuccess)
+        {
+            _logger.LogWarning("helm pull failed: {Error}", result.StandardError);
+            return null;
+        }
+
+        var after = Directory.GetFiles(destinationDir, "*.tgz");
+        return after.FirstOrDefault(f => !before.Contains(f))
+            ?? after.OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+    }
+
     private IReadOnlyList<T> ParseArray<T>(string json)
     {
         if (string.IsNullOrWhiteSpace(json)) return Array.Empty<T>();

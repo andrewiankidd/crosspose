@@ -5,18 +5,26 @@ Crosspose.Doctor is the prerequisite checker and fixer for the Crosspose toolcha
 ## Built-in checks
 - Docker Desktop available and running.
 - Docker is in Windows container mode.
+- HNS NAT health (Windows Host Networking Service).
+- Orphaned Docker networks.
+- Stale port proxy config entries.
 - WSL is enabled and the crosspose-data distro exists.
 - WSL memory limit and sudo availability.
+- WSL networking mode (mirrored vs NAT).
+- Stale port proxy rules (high-port rules with no WSL listener).
 - Podman and podman-compose inside WSL (including cgroup v2 support).
 - Helm 3.
-- Azure CLI (for ACR auth workflows).
+- Azure CLI (for ACR auth workflows — skipped in offline mode).
+
+## Offline mode
+When `offline-mode: true` is set in `crosspose.yml`, checks that require network connectivity (Azure CLI, ACR auth) are omitted entirely rather than failing. Toggle via **Tools > Enable/Disable Offline Mode** in Crosspose.Gui.
 
 ## Additional checks
 Additional checks live under `doctor.additional-checks` in `crosspose.yml`. These are added automatically by the GUIs and Dekompose when needed:
 
-- `azure-acr-auth-win:<registry>`: Docker Desktop logged in to ACR on Windows.
-- `azure-acr-auth-lin:<registry>`: Podman logged in inside WSL.
-- `port-proxy:<port>@<network>`: Windows NAT forwards a port to `127.0.0.1:<port>`.
+- `azure-acr-auth-win:<registry>`: Docker Desktop logged in to ACR on Windows (skipped in offline mode).
+- `azure-acr-auth-lin:<registry>`: Podman logged in inside WSL (skipped in offline mode).
+- `port-proxy:<listenPort>:<connectPort>@<network>`: Windows NAT forwards a port to `127.0.0.1:<connectPort>`.
 
 Port proxy checks are generated when infra ports are exposed in Dekompose outputs. The check verifies `netsh interface portproxy` entries and the firewall rule for the NAT gateway.
 

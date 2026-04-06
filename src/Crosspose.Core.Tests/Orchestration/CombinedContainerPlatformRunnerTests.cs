@@ -189,4 +189,22 @@ file sealed class FakeContainerRunner : IContainerPlatformRunner
 
     public Task<bool> RemoveVolumeAsync(string name, CancellationToken cancellationToken = default)
         => Task.FromResult(true);
+
+    public Task<bool> PruneImagesAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(true);
+
+    public Task<bool> PruneVolumesAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(true);
+
+    public Task<ContainerInspectResult?> InspectContainerAsync(string id, CancellationToken cancellationToken = default)
+        => Task.FromResult<ContainerInspectResult?>(null);
+
+    public Task<ContainerStatsResult?> GetContainerStatsAsync(string id, CancellationToken cancellationToken = default)
+        => Task.FromResult<ContainerStatsResult?>(null);
+
+    public Task<ProcessResult> ExecInContainerAsync(string id, string commandLine, CancellationToken cancellationToken = default)
+        => Task.FromResult(new ProcessResult(-1, string.Empty, "Not implemented."));
+
+    public Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default)
+        => Task.FromResult(new ProcessResult(-1, string.Empty, "Not implemented."));
 }

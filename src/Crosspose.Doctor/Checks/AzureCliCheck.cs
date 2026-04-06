@@ -6,10 +6,11 @@ namespace Crosspose.Doctor.Checks;
 public sealed class AzureCliCheck : ICheckFix
 {
     public string Name => "azure-cli";
-    public string Description => "Optional: verifies Azure CLI (az) is installed for Azure-based workflows.";
+    public string Description => "Verifies Azure CLI (az) is installed for Azure-based workflows.";
     public bool IsAdditional => true;
     public string AdditionalKey => "azure-cli";
     public bool CanFix => true;
+    public bool RequiresConnectivity => true;
 
     public async Task<CheckResult> RunAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)
     {

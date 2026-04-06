@@ -5,7 +5,9 @@ namespace Crosspose.Doctor;
 
 public static class CheckCatalog
 {
-    public static IReadOnlyList<ICheckFix> LoadAll(IEnumerable<string>? enabledAdditionalKeys = null)
+    public static IReadOnlyList<ICheckFix> LoadAll(
+        IEnumerable<string>? enabledAdditionalKeys = null,
+        bool offlineMode = false)
     {
         var enabled = new HashSet<string>(enabledAdditionalKeys ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         var checks = new List<ICheckFix>
@@ -13,15 +15,23 @@ public static class CheckCatalog
             new DockerComposeCheck(),
             new DockerRunningCheck(),
             new DockerWindowsModeCheck(),
+            new HnsNatHealthCheck(),
+            new OrphanedDockerNetworkCheck(),
+            new StalePortProxyConfigCheck(),
             new WslCheck(),
             new WslMemoryLimitCheck(),
+            new WslNetworkingModeCheck(),
+            new StalePortProxyCheck(),
             new SudoCheck(),
             new CrossposeWslCheck(),
             new PodmanWslCheck(),
             new PodmanCgroupCheck(),
             new PodmanComposeWslCheck(),
             new HelmCheck(),
-            new AzureCliCheck()
+            new AzureCliCheck(),
+            new PodmanHealthcheckRunnerCheck(),
+            new PodmanCreatedContainerCheck(),
+            new PodmanContainerAutohealCheck()
         };
 
         foreach (var key in enabled)
@@ -51,14 +61,15 @@ public static class CheckCatalog
                     checks.Add(new AzureAcrAuthWinCheck(registry));
                 }
             }
-            else if (PortProxyKey.TryParse(key, out var port, out var network))
+            else if (PortProxyKey.TryParse(key, out var listenPort, out var connectPort, out var network))
             {
-                checks.Add(new PortProxyCheck(port, network));
+                checks.Add(new PortProxyCheck(listenPort, connectPort, network));
             }
         }
 
         return checks
             .Where(c => !c.IsAdditional || enabled.Contains(c.AdditionalKey))
+            .Where(c => !offlineMode || !c.RequiresConnectivity)
             .ToList();
     }
 }

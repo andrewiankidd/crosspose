@@ -30,9 +30,9 @@
         </Menu>
 
         <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto">
-            <TextBlock Text="Select chart source" FontSize="18" FontWeight="Bold" Grid.Row="0" Foreground="{DynamicResource TextPrimary}" />
+            <TextBlock x:Name="SourceHeader" Text="Select chart source" FontSize="18" FontWeight="Bold" Grid.Row="0" Foreground="{DynamicResource TextPrimary}" />
 
-            <Grid Grid.Row="1" Margin="0,12,0,0">
+            <Grid x:Name="SourceRow" Grid.Row="1" Margin="0,12,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="150" />
                     <ColumnDefinition Width="*" />
@@ -62,7 +62,25 @@
                         Click="OnAddSourceClick" />
             </Grid>
 
-            <Grid Grid.Row="2" Margin="0,12,0,0">
+            <!-- Preset chart display — shown instead of ChartRow when a chart path is pre-supplied -->
+            <Grid x:Name="PresetChartRow" Grid.Row="2" Margin="0,12,0,0" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Chart" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                <Button x:Name="PresetChartButton"
+                        Grid.Column="1"
+                        Margin="20,0,0,0"
+                        IsEnabled="False"
+                        HorizontalContentAlignment="Left"
+                        Padding="6,4"
+                        Background="{DynamicResource InputBackground}"
+                        Foreground="{DynamicResource TextPrimary}"
+                        BorderBrush="{DynamicResource InputBorder}" />
+            </Grid>
+
+            <Grid x:Name="ChartRow" Grid.Row="2" Margin="0,12,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="150" />
                     <ColumnDefinition Width="*" />
@@ -92,7 +110,7 @@
                         Click="OnBrowseChartClick" />
             </Grid>
 
-            <Grid Grid.Row="3" Margin="0,12,0,0">
+            <Grid x:Name="VersionRow" Grid.Row="3" Margin="0,12,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="150" />
                     <ColumnDefinition Width="*" />
@@ -144,20 +162,6 @@
                            Margin="20,6,0,0" />
 
                 <TextBlock Grid.Row="2"
-                           Text="Dekompose file"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextPrimary}"
-                           Margin="0,12,0,0" />
-                <Button Grid.Row="2"
-                        Grid.Column="1"
-                        Content="Load dekompose file..."
-                        Margin="20,12,0,0"
-                        Click="OnLoadDekomposeConfigClick"
-                        Background="{DynamicResource ButtonBackground}"
-                        Foreground="{DynamicResource ButtonForeground}"
-                        BorderBrush="{DynamicResource ButtonBorder}" />
-
-                <TextBlock Grid.Row="3"
                            Grid.Column="1"
                            Text="{Binding DekomposeHeader}"
                            Foreground="{DynamicResource TextMuted}"
@@ -241,16 +245,9 @@
                                  LogText="{Binding LogOutput, Mode=OneWay}"
                                  ClearRequested="OnLogClearRequested" />
 
-            <Border Background="{DynamicResource OverlayMask}"
-                    Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
-                    HorizontalAlignment="Stretch"
-                    VerticalAlignment="Stretch"
-                    Grid.RowSpan="10">
-                <TextBlock Text="{Binding BusyText}" FontSize="16" FontWeight="Bold"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Background="{DynamicResource OverlayTextBackground}"
-                           Foreground="{DynamicResource TextPrimary}" />
-            </Border>
+            <ui:LoadingOverlay Message="{Binding BusyText}"
+                               Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}"
+                               Grid.RowSpan="10" />
         </Grid>
     </DockPanel>
 </Window>

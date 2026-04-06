@@ -8,7 +8,7 @@ using Crosspose.Core.Diagnostics;
 using Crosspose.Doctor.Checks;
 using Microsoft.Extensions.Logging;
 
-namespace Crosspose.Dekompose.Gui;
+namespace Crosspose.Ui;
 
 public partial class AddChartSourceWindow : Window
 {
@@ -67,7 +67,7 @@ public partial class AddChartSourceWindow : Window
                 {
                     StatusText.Text = $"Helm source add failed: {result.StandardError}";
                     _log($"[AddSource] Helm source add failed: {result.StandardError}");
-                    System.Windows.MessageBox.Show(this, StatusText.Text, "Add failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(this, StatusText.Text, "Add failed", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
                 AddedHelm = true;
@@ -88,7 +88,7 @@ public partial class AddChartSourceWindow : Window
                 if (!await EnsureAzureAuthAsync(ociSource.SourceUrl))
                 {
                     StatusText.Text = ociDetect.Message ?? "Azure ACR authentication required.";
-                    System.Windows.MessageBox.Show(this, StatusText.Text, "Authentication required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(this, StatusText.Text, "Authentication required", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
             }
@@ -127,21 +127,21 @@ public partial class AddChartSourceWindow : Window
             else if (ociDetect.RequiresAuth && !string.IsNullOrWhiteSpace(ociDetect.Message))
             {
                 StatusText.Text = ociDetect.Message;
-                System.Windows.MessageBox.Show(this, ociDetect.Message, "Authentication required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, ociDetect.Message, "Authentication required", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             var message = "Could not detect Helm or OCI registry at this address.";
             StatusText.Text = message;
             _log($"[AddSource] {message}");
-            System.Windows.MessageBox.Show(this, message, "Repository not detected", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, message, "Repository not detected", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to add repository.");
             _log($"[AddSource] Error: {ex.Message}");
             StatusText.Text = $"Error: {ex.Message}";
-            System.Windows.MessageBox.Show(this, StatusText.Text, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, StatusText.Text, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -159,7 +159,7 @@ public partial class AddChartSourceWindow : Window
         if (!azResult.IsSuccessful)
         {
             var prompt = "Azure CLI is required. Run fix now?";
-            if (System.Windows.MessageBox.Show(this, prompt, "Azure CLI required", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            if (MessageBox.Show(this, prompt, "Azure CLI required", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 var fix = await azCli.FixAsync(_runner, _loggerFactory.CreateLogger(azCli.Name), CancellationToken.None);
                 if (!fix.Succeeded)
@@ -186,7 +186,7 @@ public partial class AddChartSourceWindow : Window
         }
 
         var acrPrompt = $"Authenticate to ACR '{registryName}' now?";
-        if (System.Windows.MessageBox.Show(this, acrPrompt, "Azure ACR auth", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+        if (MessageBox.Show(this, acrPrompt, "Azure ACR auth", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
         {
             var fix = await acrCheck.FixAsync(_runner, _loggerFactory.CreateLogger(acrCheck.Name), CancellationToken.None);
             if (!fix.Succeeded)
@@ -213,8 +213,7 @@ public partial class AddChartSourceWindow : Window
             var token = await acrCheck.GetAccessTokenAsync(_runner, _loggerFactory.CreateLogger(acrCheck.Name), CancellationToken.None);
             if (!string.IsNullOrWhiteSpace(token))
             {
-                var user = "00000000-0000-0000-0000-000000000000";
-                UserBox.Text = user;
+                UserBox.Text = "00000000-0000-0000-0000-000000000000";
                 PassBox.Password = token;
                 _log($"[AddSource] Retrieved ACR token for {registryName}; using bearer credentials.");
             }
@@ -227,36 +226,17 @@ public partial class AddChartSourceWindow : Window
 
     private static string ExtractRegistryName(string url)
     {
-        try
-        {
-            var host = new Uri(url).Host;
-            return host.Split('.')[0];
-        }
-        catch
-        {
-            return url;
-        }
+        try { return new Uri(url).Host.Split('.')[0]; }
+        catch { return url; }
     }
 
     private static string DeriveNameWithFilter(string baseName, string? filter)
     {
         if (string.IsNullOrWhiteSpace(filter)) return baseName;
-        var safe = new string(filter
-            .Trim()
-            .ToLowerInvariant()
-            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')
-            .ToArray());
-        safe = safe.Trim('-');
-        if (string.IsNullOrWhiteSpace(safe))
-        {
-            return baseName;
-        }
-
-        if (safe.Length > 32)
-        {
-            safe = safe[..32];
-        }
-
+        var safe = new string(filter.Trim().ToLowerInvariant()
+            .Select(ch => char.IsLetterOrDigit(ch) ? ch : '-').ToArray()).Trim('-');
+        if (string.IsNullOrWhiteSpace(safe)) return baseName;
+        if (safe.Length > 32) safe = safe[..32];
         return $"{baseName}-{safe}";
     }
 }

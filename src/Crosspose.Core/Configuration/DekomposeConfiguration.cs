@@ -19,6 +19,43 @@ public sealed class DekomposeRuleSet
 
     [YamlMember(Alias = "secret-key-refs")]
     public Dictionary<string, List<DekomposeSecretDefinition>> SecretKeyRefs { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Workload name prefixes that should always be treated as Windows, regardless of what
+    /// nodeSelector the Helm chart emits. Use this when the chart doesn't set
+    /// kubernetes.io/os: windows but the workload is Windows-based.
+    /// </summary>
+    [YamlMember(Alias = "windows-workloads")]
+    public List<string> WindowsWorkloads { get; set; } = new();
+
+    /// <summary>
+    /// Glob patterns matching service hostnames that should be rewritten when --remap-ports
+    /// is active. Supports a single <c>*</c> wildcard in the subdomain portion.
+    /// Example: <c>local-*.example.com</c> matches <c>local-dev-svc-core.example.com</c>.
+    /// Services present in the rendered chart are remapped to <c>http://localhost:&lt;port&gt;</c>;
+    /// services absent (disabled in values) are blanked.
+    /// </summary>
+    [YamlMember(Alias = "local-service-match")]
+    public List<string> LocalServiceMatch { get; set; } = new();
+
+    /// <summary>
+    /// Explicit URL replacements applied after automatic port remapping.
+    /// Use this for external upstream URLs (services not deployed by this chart) that should
+    /// be rewritten to a specific local address or cleared.
+    /// </summary>
+    [YamlMember(Alias = "url-overrides")]
+    public List<DekomposeUrlOverride> UrlOverrides { get; set; } = new();
+}
+
+public sealed class DekomposeUrlOverride
+{
+    /// <summary>The URL fragment to find (exact substring match, case-insensitive).</summary>
+    [YamlMember(Alias = "from")]
+    public string From { get; set; } = string.Empty;
+
+    /// <summary>The replacement value. Use an empty string to blank the URL.</summary>
+    [YamlMember(Alias = "to")]
+    public string To { get; set; } = string.Empty;
 }
 
 public sealed class DekomposeInfraDefinition

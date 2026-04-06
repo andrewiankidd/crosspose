@@ -35,21 +35,38 @@ using var loggerFactory = CrossposeLoggerFactory.Create(LogLevel.Information);
 var logger = loggerFactory.CreateLogger("crosspose.doctor");
 var runner = new ProcessRunner(loggerFactory.CreateLogger<ProcessRunner>());
 
-var checks = Crosspose.Doctor.CheckCatalog.LoadAll(enabledAdditionals);
-var failures = 0;
-foreach (var check in checks)
+if (settings.OfflineMode)
+    logger.LogInformation("Offline mode active — connectivity checks (Azure CLI, ACR auth) suppressed.");
+
+// When --fix is passed, include AutoFix checks so autoheal runs in the script/CLI path too.
+// Without --fix, AutoFix checks are excluded — they depend on persistent state (cooldown
+// counters) that only accumulates correctly in the long-running GUI DoctorMonitor.
+var checks = Crosspose.Doctor.CheckCatalog.LoadAll(enabledAdditionals, offlineMode: settings.OfflineMode)
+    .Where(c => runFixes || !c.AutoFix)
+    .ToList();
+
+// Run all checks in parallel; collect results then print/fix in order.
+var checkTasks = checks.Select(async check =>
 {
     var checkLogger = loggerFactory.CreateLogger(check.Name);
-    logger.LogInformation("Checking: {Name} - {Description}", check.Name, check.Description);
     var result = await check.RunAsync(runner, checkLogger, CancellationToken.None);
+    return (check, checkLogger, result);
+}).ToList();
+
+await Task.WhenAll(checkTasks);
+
+var failures = 0;
+foreach (var task in checkTasks)
+{
+    var (check, checkLogger, result) = task.Result;
     if (result.IsSuccessful)
     {
-        logger.LogInformation("✔ {Name}: {Message} | {Description}", check.Name, result.Message, check.Description);
+        logger.LogInformation("✔ {Name}: {Message}", check.Name, result.Message);
         continue;
     }
 
     failures++;
-    logger.LogWarning("✖ {Name}: {Message} | {Description}", check.Name, result.Message, check.Description);
+    logger.LogWarning("✖ {Name}: {Message}", check.Name, result.Message);
 
     if (runFixes && check.CanFix)
     {
@@ -57,10 +74,7 @@ foreach (var check in checks)
         var fixResult = await check.FixAsync(runner, checkLogger, CancellationToken.None);
         var prefix = fixResult.Succeeded ? "✔" : "✖";
         logger.LogInformation("{Prefix} Fix result: {Message}", prefix, fixResult.Message);
-        if (!fixResult.Succeeded)
-        {
-            failures++;
-        }
+        if (!fixResult.Succeeded) failures++;
     }
 }
 

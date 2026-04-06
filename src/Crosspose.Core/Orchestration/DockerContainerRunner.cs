@@ -80,7 +80,8 @@ public class DockerContainerRunner : ContainerPlatformRunnerBase
                     State: state,
                     Ports: ports,
                     Project: project,
-                    HostPlatform: "win"));
+                    HostPlatform: "win",
+                    Health: ContainerProcessInfo.ParseHealth(status)));
             }
             catch (Exception ex)
             {
@@ -143,6 +144,15 @@ public class DockerContainerRunner : ContainerPlatformRunnerBase
         }
 
         return list;
+    }
+
+    public override async Task<ContainerStatsResult?> GetContainerStatsAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var result = await ExecAsync(new[] { "stats", "--no-stream", "--format", "{{json .}}", id }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var output = (result.StandardOutput + result.StandardError).Trim();
+        if (string.IsNullOrWhiteSpace(output)) return null;
+        try { return ContainerInspectParser.ParseStats(output); }
+        catch { return null; }
     }
 
     private static IEnumerable<JsonElement> EnumerateJsonElements(string output)

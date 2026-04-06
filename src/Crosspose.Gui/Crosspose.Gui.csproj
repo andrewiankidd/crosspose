@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\Crosspose.Core\\Crosspose.Core.csproj" />
+    <ProjectReference Include="..\\Crosspose.Doctor\\Crosspose.Doctor.csproj" />
     <ProjectReference Include="..\\Crosspose.Doctor.Gui\\Crosspose.Doctor.Gui.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\\Crosspose.Dekompose.Gui\\Crosspose.Dekompose.Gui.csproj" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\\Crosspose.Ui\\Crosspose.Ui.csproj" />
@@ -37,12 +38,7 @@
     <Content Include="..\\Crosspose.Doctor.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Doctor.Gui.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\\Crosspose.Doctor.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Doctor.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="..\\Crosspose.Doctor.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Doctor.pdb">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+
     <Content Include="..\\Crosspose.Dekompose.Gui\\bin\\$(Configuration)\\$(TargetFramework)\\Crosspose.Dekompose.Gui.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

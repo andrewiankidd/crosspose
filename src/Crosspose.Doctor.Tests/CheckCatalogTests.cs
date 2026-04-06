@@ -73,6 +73,14 @@ public class CheckCatalogTests
     }
 
     [Fact]
+    public void LoadAll_WithPortProxyArrowKey_AddsPortProxyCheck()
+    {
+        var checks = CheckCatalog.LoadAll(new[] { "port-proxy:1433>41433@nat" });
+
+        Assert.Contains(checks, c => c.Name == "port-proxy-1433");
+    }
+
+    [Fact]
     public void LoadAll_WithMultipleKeys_AddsAllMatchingChecks()
     {
         var keys = new[]
@@ -87,6 +95,26 @@ public class CheckCatalogTests
         // Should have built-in + 4 additional
         var additionals = checks.Where(c => c.IsAdditional).ToList();
         Assert.Equal(4, additionals.Count);
+    }
+
+    [Fact]
+    public void LoadAll_ContainsWslNetworkingModeCheck()
+    {
+        var checks = CheckCatalog.LoadAll();
+
+        Assert.Contains(checks, c => c.Name == "wsl-networking-mode");
+    }
+
+    [Fact]
+    public void LoadAll_WslNetworkingModeBeforePortProxy()
+    {
+        var checks = CheckCatalog.LoadAll(new[] { "port-proxy:1433@nat" }).ToList();
+
+        var netIdx = checks.FindIndex(c => c.Name == "wsl-networking-mode");
+        var ppIdx = checks.FindIndex(c => c.Name == "port-proxy-1433");
+        Assert.True(netIdx >= 0, "wsl-networking-mode should be present");
+        Assert.True(ppIdx >= 0, "port-proxy-1433 should be present");
+        Assert.True(netIdx < ppIdx, "wsl-networking-mode should run before port-proxy checks");
     }
 
     [Fact]
@@ -112,13 +140,59 @@ public class CheckCatalogTests
     }
 
     [Fact]
-    public void LoadAll_BuiltInChecksInExpectedOrder()
+    public void LoadAll_ContainsOrphanedDockerNetworkCheck()
     {
         var checks = CheckCatalog.LoadAll();
 
-        // DockerCompose should come before WSL (Docker needs to be checked first)
-        var dockerIdx = checks.ToList().FindIndex(c => c.Name == "docker-compose");
-        var wslIdx = checks.ToList().FindIndex(c => c.Name == "wsl");
-        Assert.True(dockerIdx < wslIdx, "docker-compose should be checked before wsl");
+        Assert.Contains(checks, c => c.Name == "orphaned-docker-networks");
+    }
+
+    [Fact]
+    public void LoadAll_ContainsStalePortProxyCheck()
+    {
+        var checks = CheckCatalog.LoadAll();
+
+        Assert.Contains(checks, c => c.Name == "stale-port-proxies");
+    }
+
+    [Fact]
+    public void LoadAll_ContainsStalePortProxyConfigCheck()
+    {
+        var checks = CheckCatalog.LoadAll();
+
+        Assert.Contains(checks, c => c.Name == "stale-port-proxy-config");
+    }
+
+    [Fact]
+    public void LoadAll_ContainsHnsNatHealthCheck()
+    {
+        var checks = CheckCatalog.LoadAll();
+
+        Assert.Contains(checks, c => c.Name == "hns-nat-health");
+    }
+
+    [Fact]
+    public void LoadAll_BuiltInChecksInExpectedOrder()
+    {
+        var checks = CheckCatalog.LoadAll().ToList();
+
+        var dockerIdx = checks.FindIndex(c => c.Name == "docker-compose");
+        var hnsIdx = checks.FindIndex(c => c.Name == "hns-nat-health");
+        var orphanNetIdx = checks.FindIndex(c => c.Name == "orphaned-docker-networks");
+        var staleConfigIdx = checks.FindIndex(c => c.Name == "stale-port-proxy-config");
+        var wslIdx = checks.FindIndex(c => c.Name == "wsl");
+        var netModeIdx = checks.FindIndex(c => c.Name == "wsl-networking-mode");
+        var staleProxyIdx = checks.FindIndex(c => c.Name == "stale-port-proxies");
+
+        // HNS must be healthy before we try to create/remove Docker networks
+        Assert.True(dockerIdx < hnsIdx, "docker-compose should be checked before hns-nat-health");
+        Assert.True(hnsIdx < orphanNetIdx, "hns-nat-health should be checked before orphaned-docker-networks");
+        // Config cleanup runs after network cleanup so the network list is accurate
+        Assert.True(orphanNetIdx < staleConfigIdx, "orphaned-docker-networks should be checked before stale-port-proxy-config");
+        // Docker checks before WSL checks
+        Assert.True(staleConfigIdx < wslIdx, "stale-port-proxy-config should be checked before wsl");
+        // WSL checks before stale portproxy rules
+        Assert.True(wslIdx < netModeIdx, "wsl should be checked before wsl-networking-mode");
+        Assert.True(netModeIdx < staleProxyIdx, "wsl-networking-mode should be checked before stale-port-proxies");
     }
 }

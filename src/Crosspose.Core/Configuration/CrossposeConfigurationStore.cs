@@ -7,6 +7,9 @@ namespace Crosspose.Core.Configuration;
 
 public sealed class CrossposeConfiguration
 {
+    [YamlMember(Alias = "offline-mode")]
+    public bool OfflineMode { get; set; } = false;
+
     [YamlMember(Alias = "compose")]
     public ComposeConfiguration Compose { get; set; } = new();
 
@@ -45,6 +48,9 @@ public sealed class ComposeGuiConfiguration
 {
     [YamlMember(Alias = "refresh-interval-seconds")]
     public int? RefreshIntervalSeconds { get; set; }
+
+    [YamlMember(Alias = "dark-mode")]
+    public bool? DarkMode { get; set; }
 }
 
 public sealed class ComposeWslConfiguration
@@ -99,19 +105,23 @@ public static class CrossposeConfigurationStore
         .WithNamingConvention(HyphenatedNamingConvention.Instance)
         .Build();
 
+    // Session-scoped dekompose config override — set by ApplyDekomposeConfigForSession.
+    // Affects Load() in the current process only; never written to disk.
+    private static DekomposeConfiguration? _sessionDekomposeConfig;
+
     public static string ConfigPath => ConfigPathValue;
 
     public static CrossposeConfiguration Load()
     {
         lock (Sync)
         {
+            CrossposeConfiguration? cfg = null;
             if (File.Exists(ConfigPathValue))
             {
                 try
                 {
                     var yaml = File.ReadAllText(ConfigPathValue);
-                    var cfg = Deserializer.Deserialize<CrossposeConfiguration>(yaml);
-                    if (cfg is not null) return cfg;
+                    cfg = Deserializer.Deserialize<CrossposeConfiguration>(yaml);
                 }
                 catch (Exception ex)
                 {
@@ -122,9 +132,50 @@ public static class CrossposeConfigurationStore
                 }
             }
 
-            var config = new CrossposeConfiguration();
-            Save(config);
-            return config;
+            if (cfg is null)
+            {
+                cfg = new CrossposeConfiguration();
+                Save(cfg);
+            }
+
+            if (_sessionDekomposeConfig is not null)
+                cfg.Dekompose = _sessionDekomposeConfig;
+
+            return cfg;
+        }
+    }
+
+    /// <summary>
+    /// Merges the dekompose config at <paramref name="path"/> into an in-memory session override
+    /// without writing anything to disk. Subsequent <see cref="Load"/> calls in this process
+    /// will reflect the merged config. Use this from CLI tools that are short-lived processes.
+    /// </summary>
+    public static void ApplyDekomposeConfigForSession(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Dekompose config path is required.", nameof(path));
+        if (!File.Exists(path))
+            throw new FileNotFoundException("Dekompose config file not found.", path);
+
+        var incoming = LoadDekomposeConfiguration(path);
+        lock (Sync)
+        {
+            CrossposeConfiguration? base_ = null;
+            if (File.Exists(ConfigPathValue))
+            {
+                try
+                {
+                    var yaml = File.ReadAllText(ConfigPathValue);
+                    base_ = Deserializer.Deserialize<CrossposeConfiguration>(yaml);
+                }
+                catch { /* use defaults */ }
+            }
+            base_ ??= new CrossposeConfiguration();
+            base_.Dekompose ??= new DekomposeConfiguration();
+            base_.Dekompose.CustomRules ??= new List<DekomposeRuleSet>();
+            incoming.CustomRules ??= new List<DekomposeRuleSet>();
+            MergeDekomposeRules(base_.Dekompose.CustomRules, incoming.CustomRules);
+            _sessionDekomposeConfig = base_.Dekompose;
         }
     }
 

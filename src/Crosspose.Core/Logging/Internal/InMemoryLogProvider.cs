@@ -70,7 +70,7 @@ internal sealed class InMemoryLogProvider : ILoggerProvider
     }
 }
 
-internal static class SecretCensor
+public static class SecretCensor
 {
     private static readonly Regex JwtPattern = new(@"[A-Za-z0-9\-_]{20,}\.[A-Za-z0-9\-_]{20,}\.[A-Za-z0-9\-_]{20,}", RegexOptions.Compiled);
     private static readonly Regex BearerPattern = new(@"Bearer\s+[A-Za-z0-9\-_\.]{20,}", RegexOptions.Compiled | RegexOptions.IgnoreCase);

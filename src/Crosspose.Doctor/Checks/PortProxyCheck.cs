@@ -12,23 +12,30 @@ namespace Crosspose.Doctor.Checks;
 
 public sealed class PortProxyCheck : ICheckFix
 {
-    private readonly int _port;
+    private readonly int _listenPort;
+    private readonly int _connectPort;
     private readonly string _additionalKey;
     private readonly string? _network;
 
-    public PortProxyCheck(int port, string? network = null)
+    public PortProxyCheck(int listenPort, int connectPort, string? network = null)
     {
-        if (port <= 0) throw new ArgumentOutOfRangeException(nameof(port));
-        _port = port;
+        if (listenPort <= 0) throw new ArgumentOutOfRangeException(nameof(listenPort));
+        if (connectPort <= 0) throw new ArgumentOutOfRangeException(nameof(connectPort));
+        _listenPort = listenPort;
+        _connectPort = connectPort;
         _network = string.IsNullOrWhiteSpace(network) ? null : network.Trim();
-        _additionalKey = PortProxyKey.Format(port, _network);
+        _additionalKey = PortProxyKey.Format(listenPort, connectPort, _network);
     }
 
-    public string Name => $"port-proxy-{_port}";
-    public string Description => $"Ensures Windows port proxy exposes {_port} to Docker Windows containers.";
+    public string Name => $"port-proxy-{_listenPort}";
+    public string Description => _connectPort != _listenPort
+        ? $"Ensures Windows port proxy forwards {_listenPort} on the NAT gateway to localhost:{_connectPort} for Docker↔WSL2 container communication."
+        : $"Ensures Windows port proxy exposes {_listenPort} to Docker Windows containers.";
     public bool IsAdditional => true;
     public string AdditionalKey => _additionalKey;
     public bool CanFix => true;
+    public bool AutoFix => true;
+    public int CheckIntervalSeconds => 120;
 
     public async Task<CheckResult> RunAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)
     {
@@ -38,28 +45,45 @@ public sealed class PortProxyCheck : ICheckFix
             return CheckResult.Failure("Unable to determine the Windows NAT gateway address.");
         }
 
-        var result = await runner.RunAsync("netsh", "interface portproxy show v4tov4", cancellationToken: cancellationToken);
-        if (!result.IsSuccess)
+        var proxyResult = await runner.RunAsync("netsh", "interface portproxy show v4tov4", cancellationToken: cancellationToken);
+        if (!proxyResult.IsSuccess)
         {
-            var message = string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError;
+            var message = string.IsNullOrWhiteSpace(proxyResult.StandardError) ? proxyResult.StandardOutput : proxyResult.StandardError;
             message = string.IsNullOrWhiteSpace(message) ? "Failed to query port proxy configuration." : message.Trim();
             return CheckResult.Failure(message);
         }
 
-        var missing = natAddresses
-            .Where(address => !PortProxyExists(result.StandardOutput, address, _port))
+        var missingProxy = natAddresses
+            .Where(address => !PortProxyExists(proxyResult.StandardOutput, address, _listenPort, _connectPort))
             .ToList();
 
-        if (missing.Any())
+        if (missingProxy.Any())
         {
-            return CheckResult.Failure($"Port proxy {_port} is missing for NAT address(es): {string.Join(", ", missing)}.");
+            return CheckResult.Failure($"Port proxy {_listenPort}→{_connectPort} is missing for NAT address(es): {string.Join(", ", missingProxy)}.");
         }
 
-        return CheckResult.Success($"Port proxy {_port} is configured for NAT address(es): {string.Join(", ", natAddresses)}.");
+        // Also verify the Windows Firewall inbound rule exists — without it, Windows containers
+        // cannot reach the portproxy listener even though the rule is configured in netsh.
+        var fwResult = await runner.RunAsync("netsh", "advfirewall firewall show rule name=all dir=in", cancellationToken: cancellationToken);
+        var missingFirewall = natAddresses
+            .Where(address => !FirewallRuleExists(fwResult.StandardOutput, address, _listenPort))
+            .ToList();
+
+        if (missingFirewall.Any())
+        {
+            return CheckResult.Failure(
+                $"Port proxy {_listenPort} is configured but missing Windows Firewall inbound rule for {string.Join(", ", missingFirewall)}. " +
+                "Windows containers cannot reach the portproxy listener.");
+        }
+
+        return CheckResult.Success($"Port proxy {_listenPort}→{_connectPort} is configured for NAT address(es): {string.Join(", ", natAddresses)}.");
     }
 
     public async Task<FixResult> FixAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)
     {
+        if (!PortProxyApplicator.IsElevated)
+            return FixResult.Failure("Administrator privileges are required to configure port proxies. Re-run as administrator or use the Fix button.");
+
         var natAddresses = await ResolveNatGatewayAddressesAsync(runner, cancellationToken);
         if (!natAddresses.Any())
         {
@@ -77,13 +101,13 @@ public sealed class PortProxyCheck : ICheckFix
         }
 
         var missingAddresses = natAddresses
-            .Where(address => !PortProxyExists(existingConfig.StandardOutput, address, _port))
+            .Where(address => !PortProxyExists(existingConfig.StandardOutput, address, _listenPort, _connectPort))
             .ToList();
 
         foreach (var address in missingAddresses)
         {
             var addProxyArgs =
-                $"interface portproxy add v4tov4 listenaddress={address} listenport={_port} connectaddress=127.0.0.1 connectport={_port}";
+                $"interface portproxy add v4tov4 listenaddress={address} listenport={_listenPort} connectaddress=127.0.0.1 connectport={_connectPort}";
             var proxyResult = await runner.RunAsync("netsh", addProxyArgs, cancellationToken: cancellationToken);
             if (!proxyResult.IsSuccess && !ContainsAlreadyExists(proxyResult))
             {
@@ -98,9 +122,9 @@ public sealed class PortProxyCheck : ICheckFix
         foreach (var address in natAddresses)
         {
             var sanitizedAddress = address.Replace('.', '-');
-            var ruleName = $"port-proxy-{_port}-{sanitizedAddress}";
+            var ruleName = $"port-proxy-{_listenPort}-{sanitizedAddress}";
             var addRuleArgs =
-                $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localip={address} localport={_port}";
+                $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localip={address} localport={_listenPort}";
             var ruleResult = await runner.RunAsync("netsh", addRuleArgs, cancellationToken: cancellationToken);
             if (!ruleResult.IsSuccess && !ContainsAlreadyExists(ruleResult))
             {
@@ -112,7 +136,7 @@ public sealed class PortProxyCheck : ICheckFix
             }
         }
 
-        return FixResult.Success($"Configured port proxy {_port} on NAT address(es): {string.Join(", ", natAddresses)}.");
+        return FixResult.Success($"Configured port proxy {_listenPort}→{_connectPort} on NAT address(es): {string.Join(", ", natAddresses)}.");
     }
 
     private static bool ContainsAlreadyExists(ProcessResult result)
@@ -123,7 +147,17 @@ public sealed class PortProxyCheck : ICheckFix
         return combined.IndexOf("already exists", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
-    private static bool PortProxyExists(string output, string address, int port)
+    private static bool FirewallRuleExists(string output, string listenAddress, int listenPort)
+    {
+        if (string.IsNullOrWhiteSpace(output)) return false;
+
+        // netsh advfirewall show rule output groups properties per rule separated by blank lines.
+        // Look for a rule block containing both our LocalIP and LocalPort.
+        var ruleName = $"port-proxy-{listenPort}-{listenAddress.Replace('.', '-')}";
+        return output.IndexOf(ruleName, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool PortProxyExists(string output, string listenAddress, int listenPort, int connectPort)
     {
         if (string.IsNullOrWhiteSpace(output)) return false;
 
@@ -140,14 +174,17 @@ public sealed class PortProxyCheck : ICheckFix
                 continue;
             }
 
+            // netsh output columns: listenAddress listenPort connectAddress connectPort
             var tokens = row.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (tokens.Length < 2) continue;
+            if (tokens.Length < 4) continue;
 
-            var listenAddress = tokens[0];
-            var listenPort = tokens[1];
+            var rowListenAddr = tokens[0];
+            var rowListenPort = tokens[1];
+            var rowConnectPort = tokens[3];
 
-            if (listenAddress.Equals(address, StringComparison.OrdinalIgnoreCase) &&
-                listenPort.Equals(port.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase))
+            if (rowListenAddr.Equals(listenAddress, StringComparison.OrdinalIgnoreCase) &&
+                rowListenPort.Equals(listenPort.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase) &&
+                rowConnectPort.Equals(connectPort.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -158,8 +195,7 @@ public sealed class PortProxyCheck : ICheckFix
 
     private async Task<IReadOnlyList<string>> ResolveNatGatewayAddressesAsync(ProcessRunner runner, CancellationToken cancellationToken)
     {
-        var natAddresses = await NatGatewayResolver.ResolveAsync(runner, cancellationToken, GetConfiguredNetworkName());
-        return natAddresses;
+        return await NatGatewayResolver.ResolveAsync(runner, cancellationToken, GetConfiguredNetworkName());
     }
 
     private string? GetConfiguredNetworkName()
@@ -170,5 +206,4 @@ public sealed class PortProxyCheck : ICheckFix
         }
         return null;
     }
-
 }

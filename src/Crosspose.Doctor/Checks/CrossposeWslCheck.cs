@@ -69,37 +69,65 @@ public sealed class CrossposeWslCheck : ICheckFix
         var user = GetUser();
         var pass = GetPass();
 
+        // Triage before acting — use the lightest intervention that actually fixes the problem.
+        // Only escalate to full unregister+reimport if nothing lighter works.
+
+        var list = await runner.RunAsync("wsl", "-l -v", cancellationToken: cancellationToken);
+        var distroExists = list.IsSuccess && DistroExists(list.StandardOutput, targetDistro);
+
+        if (distroExists)
+        {
+            // Distro is registered. Try a terminate+reconnect first — handles crashed/hung distros.
+            logger.LogInformation("Distro '{Distro}' is registered. Attempting terminate+reconnect before reimport.", targetDistro);
+            await runner.RunAsync("wsl", $"--terminate {targetDistro}", cancellationToken: cancellationToken);
+
+            var ping = await runner.RunAsync("wsl", $"-d {targetDistro} -- echo ok", cancellationToken: cancellationToken);
+            if (ping.IsSuccess)
+            {
+                // Distro came back — check if the user issue needs fixing too.
+                var auth = await runner.RunAsync("wsl", $"-d {targetDistro} --user {user} -- echo ok", cancellationToken: cancellationToken);
+                if (auth.IsSuccess)
+                {
+                    return FixResult.Success($"WSL distro '{targetDistro}' recovered via terminate+reconnect.");
+                }
+
+                // User missing or broken — add user without touching the distro.
+                logger.LogInformation("Distro '{Distro}' is accessible but user '{User}' is broken. Re-provisioning user.", targetDistro, user);
+                await runner.RunAsync("wsl", $"-d {targetDistro} -- sh -c \"id -u {user} >/dev/null 2>&1 || adduser -D -s /bin/sh {user}\"", cancellationToken: cancellationToken);
+                await runner.RunAsync("wsl", $"-d {targetDistro} -- sh -c \"echo '{user}:{pass}' | chpasswd\"", cancellationToken: cancellationToken);
+
+                var authRetry = await runner.RunAsync("wsl", $"-d {targetDistro} --user {user} -- echo ok", cancellationToken: cancellationToken);
+                if (authRetry.IsSuccess)
+                    return FixResult.Success($"Re-provisioned user '{user}' in existing distro '{targetDistro}'.");
+
+                logger.LogWarning("User re-provision failed — distro may be corrupt. Proceeding to full reimport.");
+            }
+            else
+            {
+                logger.LogWarning("Distro '{Distro}' did not recover after terminate. Proceeding to full reimport.", targetDistro);
+            }
+        }
+
+        // Full reimport — distro missing or unrecoverable.
+        logger.LogInformation("Performing full reimport of '{Distro}'.", targetDistro);
         _ = await runner.RunAsync("wsl", $"--unregister {targetDistro}", cancellationToken: cancellationToken);
 
         var (rootFsPath, rootFsError) = await EnsureAlpineRootFsAsync(logger, cancellationToken);
         if (rootFsPath is null)
-        {
             return FixResult.Failure($"Unable to retrieve Alpine rootfs for import. {rootFsError}");
-        }
 
         var targetRoot = PrepareTargetDirectory(targetDistro);
         var import = await runner.RunAsync("wsl", $"--import {targetDistro} \"{targetRoot}\" \"{rootFsPath}\" --version 2", cancellationToken: cancellationToken);
         if (!import.IsSuccess)
         {
-            var importError = string.IsNullOrWhiteSpace(import.StandardError)
-                ? import.StandardOutput
-                : import.StandardError;
+            var importError = string.IsNullOrWhiteSpace(import.StandardError) ? import.StandardOutput : import.StandardError;
             return FixResult.Failure($"Failed to import {targetDistro}: {importError}");
         }
 
-        var ensureUser = await runner.RunAsync("wsl", $"-d {targetDistro} -- sh -c \"id -u {user} >/dev/null 2>&1 || adduser -D -s /bin/sh {user}\"", cancellationToken: cancellationToken);
-        if (!ensureUser.IsSuccess)
-        {
-            logger.LogWarning("Unable to ensure user {User} inside {Distro}: {Error}", user, targetDistro, ensureUser.StandardError);
-        }
+        await runner.RunAsync("wsl", $"-d {targetDistro} -- sh -c \"id -u {user} >/dev/null 2>&1 || adduser -D -s /bin/sh {user}\"", cancellationToken: cancellationToken);
+        await runner.RunAsync("wsl", $"-d {targetDistro} -- sh -c \"echo '{user}:{pass}' | chpasswd\"", cancellationToken: cancellationToken);
 
-        var setPass = await runner.RunAsync("wsl", $"-d {targetDistro} -- sh -c \"echo '{user}:{pass}' | chpasswd\"", cancellationToken: cancellationToken);
-        if (!setPass.IsSuccess)
-        {
-            logger.LogWarning("Unable to set password for {User} inside {Distro}: {Error}", user, targetDistro, setPass.StandardError);
-        }
-
-        return FixResult.Success($"Created/updated WSL distro '{targetDistro}' with user '{user}'.");
+        return FixResult.Success($"Reimported WSL distro '{targetDistro}' with user '{user}'.");
     }
 
     private static bool DistroExists(string listOutput, string name)
