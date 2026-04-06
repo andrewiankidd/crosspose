@@ -63,7 +63,7 @@ Ten projects in `src/`, all under `Crosspose.sln`. Libraries hold reusable logic
 
 **Crosspose.Cli** — unified CLI. `ps` aggregates docker+podman containers. `compose`/`up`/`down`/`restart`/`stop`/`start`/`logs`/`top`/`ps` orchestrate across both platforms. `sources` manages Helm/OCI chart sources.
 
-**Crosspose.Doctor** — prerequisite check library. `ICheckFix` interface (includes `RequiresConnectivity` default member), `CheckCatalog` with 20+ checks (DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli, AzureAcrAuth, PortProxy). Supports additional checks via config. `offlineMode` parameter on `LoadAll` suppresses connectivity-requiring checks.
+**Crosspose.Doctor** — prerequisite check library. `ICheckFix` interface (includes `RequiresConnectivity`, `AutoFix`, `CheckIntervalSeconds` default members), `CheckCatalog` with 21 built-in checks (DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli, PodmanHealthcheckRunner, PodmanCreatedContainer, PodmanContainerAutoheal, WslToWindowsFirewall). Supports additional checks via config. `offlineMode` parameter on `LoadAll` suppresses connectivity-requiring checks.
 
 **Crosspose.Doctor.Cli** — CLI entry point for Doctor. `--fix` triggers remediation. `--enable-additional` for extra checks.
 
@@ -82,7 +82,9 @@ Ten projects in `src/`, all under `Crosspose.sln`. Libraries hold reusable logic
 - Theme: dark/light mode persisted as `compose.gui.dark-mode` in `crosspose.yml`. Toggle via View menu.
 - Logging: all sinks (console, file, in-memory) sanitize JWTs and bearer tokens via `SecretCensor`.
 - Compose orchestration routes Windows compose files to `docker compose` and Linux files to `podman compose` inside WSL.
-- NAT gateway bridging: Dekompose rewrites Windows env vars to point to the NAT gateway; Doctor's PortProxy check configures `netsh` port forwarding.
+- NAT gateway bridging (Windows→Linux): Dekompose rewrites Windows env vars to `${NAT_GATEWAY_IP}`; Doctor's PortProxy check configures `netsh` port forwarding on the Docker nat interface.
+- Reverse bridging (Linux→Windows): Dekompose rewrites Linux env vars referencing Windows services to `${WSL_HOST_IP}`; `PortProxyApplicator` configures reverse `netsh` port forwarding on the WSL vEthernet interface; `WslToWindowsFirewallCheck` ensures Hyper-V and Windows firewall allow the traffic.
+- Portable mode propagation: GUI sets `CROSSPOSE_PORTABLE_ROOT` env var so child processes (Doctor.Gui, Dekompose.Gui) inherit portable mode.
 
 ## Deep Context (.context/)
 

@@ -63,9 +63,9 @@ View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, 
 
 ### Linux→Windows container communication (reverse NAT bridging)
 
-**Status**: Partially implemented. Windows→Linux works via `NAT_GATEWAY_IP` + `netsh portproxy`. Linux→Windows requires a mirror mechanism that doesn't exist yet.
+**Status**: Implemented and working. Windows→Linux works via `NAT_GATEWAY_IP` + `netsh portproxy`. Linux→Windows works via `WSL_HOST_IP` + reverse `netsh portproxy` on the WSL vEthernet interface + Windows/Hyper-V firewall rules.
 
-**Problem**: Docker Desktop binds Windows container ports to `127.0.0.1` only (not `0.0.0.0`), so WSL/Podman containers can't reach them directly. Additionally, the Windows firewall may block inbound from the WSL virtual interface.
+**Problem**: Docker Desktop binds Windows container ports to `127.0.0.1` only (not `0.0.0.0`), so WSL/Podman containers can't reach them directly. Additionally, the Windows firewall (and on Windows 11, the Hyper-V firewall) may block inbound from the WSL virtual interface.
 
 **Proven working path** (tested 2026-04-06 on Machine B):
 1. Resolve the WSL-facing interface IP on the Windows host (the `vEthernet (WSL*)` adapter, e.g. `172.24.112.1`).
@@ -75,13 +75,20 @@ View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, 
 5. Linux compose env vars use `WSL_HOST_IP` (analogous to `NAT_GATEWAY_IP`) for cross-OS Windows service references.
 6. The orchestrator must pass `WSL_HOST_IP` to Podman compose via the `env` prefix in the WSL command (Windows env vars don't propagate into WSL automatically — see `PodmanContainerRunner.ExecAsync`).
 
-**Implementation plan**:
-- Add `WSL_HOST_IP` resolution to `ComposeOrchestrator.BuildEnvironmentAsync` (resolve from `vEthernet (WSL*)` adapter).
-- Add reverse port proxy requirements to `conversion-report.yaml` for Windows services referenced by Linux services.
-- Doctor check: detect WSL→Windows connectivity (try TCP to `WSL_HOST_IP:3389` or similar) and fix by adding firewall rules.
-- `PortProxyApplicator`: handle reverse-direction rules on the WSL interface in addition to NAT gateway rules.
+**Implementation** (completed 2026-04-06):
+- `WslHostResolver.cs`: resolves WSL vEthernet adapter IP via .NET NetworkInterface API or `ip route show default` fallback.
+- `ComposeOrchestrator.BuildEnvironmentAsync`: provides `WSL_HOST_IP` alongside `NAT_GATEWAY_IP` to both Docker and Podman compose.
+- `ComposeGenerator.RemapServiceUrls`: `HostFor()` returns `${WSL_HOST_IP}` for Linux caller → Windows target, `${NAT_GATEWAY_IP}` for Windows caller → Linux target.
+- `ComposeGenerator`: emits `reversePortProxyRequirements` in `conversion-report.yaml` for Windows service ports.
+- `PortProxyApplicator.TryApplyAsync`: applies reverse port proxies on the WSL interface (listenaddress=WSL_HOST_IP, connectaddress=127.0.0.1:docker-mapped-port).
+- `PodmanContainerRunner.ExecAsync`: injects env vars into WSL via `env` prefix (Windows env vars don't propagate into WSL automatically).
+- `WslToWindowsFirewallCheck`: Doctor check that creates Hyper-V firewall allow rule and Windows firewall inbound rule for the WSL interface.
 
-**Related files**: `ComposeOrchestrator.cs`, `ComposeGenerator.cs` (RemapServiceUrls), `PortProxyApplicator.cs`, `PortProxyCheck.cs`, `PodmanContainerRunner.cs` (env var injection).
+**Remaining gaps**:
+- The `WslToWindowsFirewallCheck` doesn't always detect when its rules are needed (checks for reverse proxies on WSL interface, but timing with PortProxyApplicator can cause false negatives).
+- Duplicate firewall rules still accumulate (see separate tech-debt item).
+
+**Related files**: `WslHostResolver.cs`, `ComposeOrchestrator.cs`, `ComposeGenerator.cs`, `PortProxyApplicator.cs`, `PortProxyRequirementLoader.cs`, `PodmanContainerRunner.cs`, `WslToWindowsFirewallCheck.cs`.
 
 ---
 

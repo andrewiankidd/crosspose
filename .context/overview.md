@@ -11,9 +11,9 @@ The target user is a developer running hybrid Windows/Linux workloads locally on
 
 ## Current Status
 
-- **Working**: Full compose generation pipeline (ComposeGenerator), compose orchestration (up/down/restart/stop/start/logs/top/ps), full CLI parity (container/images/volumes/bundles/deployments/charts subcommands), deploy/remove commands, 20+ Doctor checks with fixes, container dashboard with live logs, Charts view with pull-from-source, Dekompose GUI with chart source management, Helm/OCI source support, portable mode, offline mode, dark/light themes, Serilog file logging with secret sanitization, NAT gateway bridging with port proxy, image/volume pruning. Podman start/restart uses `up --force-recreate` to avoid stale network namespace. Job-type K8s resources emit `service_completed_successfully` depends_on conditions.
+- **Working**: Full compose generation pipeline (ComposeGenerator), compose orchestration (up/down/restart/stop/start/logs/top/ps), full CLI parity (container/images/volumes/bundles/deployments/charts subcommands), deploy/remove commands, 21 built-in Doctor checks with fixes (including AutoFix background monitoring), container dashboard with live logs, Charts view with pull-from-source, Dekompose GUI with chart source management and auto-run mode, Helm/OCI source support, portable mode with env var propagation to child processes, offline mode, dark/light themes, Serilog file logging with secret sanitization, bidirectional NAT gateway bridging (Windows→Linux via NAT_GATEWAY_IP, Linux→Windows via WSL_HOST_IP with reverse port proxy and Hyper-V firewall rules), UAC auto-elevation for netsh operations, image/volume pruning. Podman start/restart uses `up --force-recreate` to avoid stale network namespace. Job-type K8s resources emit `service_completed_successfully` depends_on conditions.
 - **In progress**: CI/CD pipeline.
-- **Done**: Test suite (~170 tests across `Crosspose.Core.Tests`, `Crosspose.Doctor.Tests`, `Crosspose.Dekompose.Tests`).
+- **Done**: Test suite (~170 unit tests across `Crosspose.Core.Tests`, `Crosspose.Doctor.Tests`, `Crosspose.Dekompose.Tests`). Integration test project (`Crosspose.Integration.Tests`) using the [cross-platform hello world chart](https://github.com/andrewiankidd/CrossPlatformHelmChartHelloWorld).
 
 ## Tech Stack
 

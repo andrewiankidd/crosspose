@@ -12,7 +12,7 @@ Shared class library that every other Crosspose project depends on. Provides pro
 - **`Deployment`** — `DefinitionDeploymentService` (extract and deploy compose projects), `DeploymentMetadataStore`, `PortProxyRequirementLoader`.
 - **`Diagnostics`** — `ProcessRunner` (async process execution with stdout/stderr capture, secret-sanitized output handler), `ProcessResult`.
 - **`Logging`** — `CrossposeLoggerFactory` (console + Serilog file + optional in-memory, all with JWT/bearer sanitization via `SecretCensor`), `InMemoryLogStore`.
-- **`Networking`** — `NatGatewayResolver`, `WindowsNatUtilities` (for Docker↔WSL port bridging).
+- **`Networking`** — `NatGatewayResolver` (Docker nat gateway for Windows→Linux), `WslHostResolver` (WSL vEthernet adapter IP for Linux→Windows), `WindowsNatUtilities`, `PortProxyApplicator` (forward + reverse netsh portproxy rules with UAC elevation).
 - **`Orchestration`** — Container runners (`DockerContainerRunner`, `PodmanContainerRunner`, `CombinedContainerPlatformRunner`, `WslRunner`), `ComposeOrchestrator` (routes compose actions to docker/podman), `ComposeProjectLoader`, `HelmClient`, `HelmRepositoryStore`.
 - **`Sources`** — `HelmSourceClient`, `OciSourceClient`, `SourceAuthHelper`, `SourceNameGenerator` for managing chart repositories and OCI registries.
 
