@@ -4,7 +4,7 @@
 
 Crosspose converts Helm-rendered Kubernetes manifests into Docker Compose stacks and lets you run Windows and Linux containers side-by-side on a single workstation. The toolchain is split into small CLI and WPF apps that share orchestration code so you can script or click through the same flows.
 
-## Why Crosspose? (reasoning / disclaimer)
+## Why Crosspose?
 Assume you are a developer asked to run a complex multi-service system locally. Typical hurdles:
 - Sourcing code and assets (clone repos, find manifests, hunt for scripts).
 - Machine setup (SDKs, runtimes, CLIs).
@@ -12,49 +12,55 @@ Assume you are a developer asked to run a complex multi-service system locally. 
 - App configuration (env vars, config rewrites, extra processes).
 - Dependency setup (email/SMS, SQL, storage, service bus).
 
-Containers help - reproducible runtimes, identical images across dev/test/prod, infra as code - but orchestration gets tricky:
+Containers help — reproducible runtimes, identical images across dev/test/prod, infra as code — but orchestration gets tricky:
 - Kubernetes: Windows images require Windows Server; local k8s variants typically only run Linux images.
 - Docker Desktop: can run Windows or Linux mode, not both side-by-side.
 - Result: you often cannot run the full workload (win + lin) on one machine; most guidance says it is impossible.
 
 Workaround: run Windows workloads on Docker Desktop (Windows mode) and Linux workloads on Podman inside WSL. Now you can host both kinds of containers together, but expecting every dev/QA to wire Docker + WSL + Podman and juggle shells is a lot.
 
-Crosspose steps in as a cross-platform compose shim for Docker on Windows and Podman in WSL. It brokers commands and presents a unified view, with CLIs and GUIs built on the same core. See the project overview in the [root README](../README.md).
+Crosspose steps in as a cross-platform compose shim for Docker on Windows and Podman in WSL. It brokers commands and presents a unified view, with CLIs and GUIs built on the same core.
 
-Example (combined `ps`):
-```powershell
-# Windows + Linux containers together
-dotnet run --project src/Crosspose.Cli -- ps -a
-# sample merged output (placeholder)
-#   PLATFORM  CONTAINER ID   IMAGE          NAME       STATUS
-#   win       1ef9490b...    sample-api     api        Exited (0)
-#   win       2723d8ef...    sample-db      db         Exited (255)
-#   lin       a1b2c3d4...    nginx:alpine   nginx      Up (healthy)
-```
+## Bridging Windows and Linux containers
 
-## Bridging Windows containers to WSL services
-Many workloads expose Windows front-ends (running on Docker Desktop) that call Linux services hosted by Podman inside WSL. Crosspose.Dekompose rewrites Windows environment variables so `localhost`/`host.docker.internal` and infra host tokens point to the NAT gateway, and Crosspose.Doctor registers a `port-proxy:<port>@<network>` check for every infra port your rules publish. Running Doctor (CLI or GUI) and applying its **Port Proxy** fixes configures:
+### Windows to Linux (NAT gateway)
+Windows containers reach Linux services (Podman/WSL) via the Docker nat network gateway. Crosspose.Dekompose rewrites env vars with `${NAT_GATEWAY_IP}` and registers port proxy rules. Doctor configures `netsh interface portproxy` to forward from the NAT gateway to WSL-mapped ports.
 
-```
-netsh interface portproxy add v4tov4 listenaddress=<nat> listenport=<port> connectaddress=127.0.0.1 connectport=<port>
-netsh advfirewall firewall add rule name="port-proxy-<port>" dir=in action=allow protocol=TCP localip=<nat> localport=<port>
-```
+### Linux to Windows (WSL host reverse proxy)
+Linux containers reach Windows services (Docker Desktop) via the WSL host interface. Crosspose.Dekompose rewrites env vars with `${WSL_HOST_IP}` and registers reverse port proxy rules. The orchestrator resolves the `vEthernet (WSL*)` adapter IP, and Doctor configures Hyper-V and Windows firewall rules to allow the traffic.
 
-Crosspose also injects `NAT_GATEWAY_IP` during `crosspose up` so Docker compose can resolve the gateway automatically. This keeps the Windows container -> Podman service bridge declarative without editing compose outputs manually.
+Both directions are automated — `crosspose up` applies port proxies, and Doctor fixes anything that needs elevation or firewall rules.
 
-### Projects (one line each)
-- [Crosspose CLI](crosspose/README.md) - unified ps/compose shim for Docker (Windows) + Podman (WSL). [Repo README](../README.md)
-- [Crosspose.Gui](crosspose.gui/README.md) - WPF frontend for containers/images/volumes and tooling.
-- [Crosspose.Dekompose](crosspose.dekompose/README.md) - CLI: Helm-to-Compose emitter.
-- [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/README.md) - WPF UI to pick chart/repo/values and run Dekompose.
-- [Crosspose.Doctor](crosspose.doctor/README.md) - CLI prerequisite checker with additional checks/fixes.
-- [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md) - WPF UI for Doctor with inline fix launches.
-- [Crosspose.Core](crosspose.core/README.md) - shared process/helm/platform runners and logging.
-- [Configuration](configuration.md) - schema for `crosspose.yml`/`.yaml` and how env vars merge.
-- [Portable mode](configuration.md#portable-mode) - run from a self-contained folder with local `AppData`.
+## Projects
+
+| Project | Type | Description |
+|---------|------|-------------|
+| [Crosspose.Core](crosspose.core/README.md) | Library | Shared infrastructure: process runner, container runtime abstractions, NAT/WSL host resolution, port proxy applicator, logging |
+| [Crosspose.Dekompose](crosspose.dekompose/README.md) | Library | Helm-to-Compose conversion: renders charts, splits by OS, remaps URLs, scaffolds infra |
+| [Crosspose.Dekompose.Cli](crosspose.dekompose/README.md) | CLI | Entry point for Dekompose |
+| [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/README.md) | WPF | Chart/repo/values selection, runs conversion, manages chart sources |
+| [Crosspose.Cli](crosspose/README.md) | CLI | Unified CLI: `ps`, `up`, `down`, `deploy`, `sources`, `container`, `images`, `volumes` |
+| [Crosspose.Doctor](crosspose.doctor/README.md) | Library | 21 prerequisite checks with automatic and manual fixes |
+| [Crosspose.Doctor.Cli](crosspose.doctor/README.md) | CLI | `--fix` attempts automated remediation |
+| [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md) | WPF | Per-item Fix buttons, Fix All, offline mode |
+| [Crosspose.Gui](crosspose.gui/README.md) | WPF | Main dashboard: Helm Charts, Compose Bundles, Projects, Containers, Images, Volumes |
+| [Crosspose.Ui](crosspose.gui/README.md) | Library | Shared WPF components used by all GUI projects |
+
+## Hello World Demo
+
+The [Cross-Platform Helm Chart Hello World](https://github.com/andrewiankidd/CrossPlatformHelmChartHelloWorld) is a minimal chart that proves out all of Crosspose's features. It deploys a Linux container and a Windows container side-by-side, each validating connectivity to shared infrastructure (MSSQL, Service Bus, Azurite) and to each other across the Docker/WSL boundary.
+
+![Hello World Health Checks](../assets/screencaps/hello-world-browser.png)
+
+Each container serves an HTML status page with green/red indicators. When all four checks pass on both sides, the containers report healthy in the GUI.
+
+## Reference
+
+- [Setup guide](setup.md) — prerequisites and installation
+- [Configuration](configuration.md) — `crosspose.yml` schema, portable mode
+- [Examples](examples.md) — usage examples
 
 ## Next steps
-- Read the [setup guide](setup.md) for prerequisites.
-- Try the [examples](examples.md) to see docker/podman and crosspose side-by-side.
-- Review the [configuration reference](configuration.md) to understand `crosspose.yml`/`.yaml`.
-- Explore project-specific docs: [Crosspose](crosspose/README.md), [Crosspose.Gui](crosspose.gui/README.md), [Crosspose.Dekompose](crosspose.dekompose/README.md), [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/README.md), [Crosspose.Doctor](crosspose.doctor/README.md), [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md), [Crosspose.Core](crosspose.core/README.md).
+- Run `dotnet run --project src/Crosspose.Doctor.Cli` to check prerequisites.
+- Launch the GUI with `dotnet run --project src/Crosspose.Gui`.
+- Try the [hello world chart](https://github.com/andrewiankidd/CrossPlatformHelmChartHelloWorld) to see everything in action.
