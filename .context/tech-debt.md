@@ -61,34 +61,11 @@ View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, 
 
 ---
 
-### Linux→Windows container communication (reverse NAT bridging)
+### `WslToWindowsFirewallCheck` timing causes false negatives
 
-**Status**: Implemented and working. Windows→Linux works via `NAT_GATEWAY_IP` + `netsh portproxy`. Linux→Windows works via `WSL_HOST_IP` + reverse `netsh portproxy` on the WSL vEthernet interface + Windows/Hyper-V firewall rules.
+`WslToWindowsFirewallCheck` checks whether reverse port proxy rules exist on the WSL vEthernet interface, but `PortProxyApplicator` may not have run yet when the check executes. This can cause the check to report failure even when the rules will be applied correctly on the next `crosspose up`. The fix is to either defer the check until after orchestration completes or re-query proxy state at check time.
 
-**Problem**: Docker Desktop binds Windows container ports to `127.0.0.1` only (not `0.0.0.0`), so WSL/Podman containers can't reach them directly. Additionally, the Windows firewall (and on Windows 11, the Hyper-V firewall) may block inbound from the WSL virtual interface.
-
-**Proven working path** (tested 2026-04-06 on Machine B):
-1. Resolve the WSL-facing interface IP on the Windows host (the `vEthernet (WSL*)` adapter, e.g. `172.24.112.1`).
-2. Add a `netsh interface portproxy` rule: `listenaddress=<WSL_HOST_IP> listenport=<service-port> connectaddress=127.0.0.1 connectport=<docker-mapped-port>`.
-3. Add a Windows firewall inbound rule: `netsh advfirewall firewall add rule name=... dir=in action=allow protocol=TCP localip=<WSL_HOST_IP> localport=<service-port>`.
-4. On Windows 11 with Hyper-V firewall: may also need `New-NetFirewallHyperVRule` for the WSL VM creator ID (`{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}`).
-5. Linux compose env vars use `WSL_HOST_IP` (analogous to `NAT_GATEWAY_IP`) for cross-OS Windows service references.
-6. The orchestrator must pass `WSL_HOST_IP` to Podman compose via the `env` prefix in the WSL command (Windows env vars don't propagate into WSL automatically — see `PodmanContainerRunner.ExecAsync`).
-
-**Implementation** (completed 2026-04-06):
-- `WslHostResolver.cs`: resolves WSL vEthernet adapter IP via .NET NetworkInterface API or `ip route show default` fallback.
-- `ComposeOrchestrator.BuildEnvironmentAsync`: provides `WSL_HOST_IP` alongside `NAT_GATEWAY_IP` to both Docker and Podman compose.
-- `ComposeGenerator.RemapServiceUrls`: `HostFor()` returns `${WSL_HOST_IP}` for Linux caller → Windows target, `${NAT_GATEWAY_IP}` for Windows caller → Linux target.
-- `ComposeGenerator`: emits `reversePortProxyRequirements` in `conversion-report.yaml` for Windows service ports.
-- `PortProxyApplicator.TryApplyAsync`: applies reverse port proxies on the WSL interface (listenaddress=WSL_HOST_IP, connectaddress=127.0.0.1:docker-mapped-port).
-- `PodmanContainerRunner.ExecAsync`: injects env vars into WSL via `env` prefix (Windows env vars don't propagate into WSL automatically).
-- `WslToWindowsFirewallCheck`: Doctor check that creates Hyper-V firewall allow rule and Windows firewall inbound rule for the WSL interface.
-
-**Remaining gaps**:
-- The `WslToWindowsFirewallCheck` doesn't always detect when its rules are needed (checks for reverse proxies on WSL interface, but timing with PortProxyApplicator can cause false negatives).
-- Duplicate firewall rules still accumulate (see separate tech-debt item).
-
-**Related files**: `WslHostResolver.cs`, `ComposeOrchestrator.cs`, `ComposeGenerator.cs`, `PortProxyApplicator.cs`, `PortProxyRequirementLoader.cs`, `PodmanContainerRunner.cs`, `WslToWindowsFirewallCheck.cs`.
+**File**: `src/Crosspose.Doctor/Checks/WslToWindowsFirewallCheck.cs`
 
 ---
 
@@ -98,20 +75,3 @@ View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, 
 
 **File**: `src/Crosspose.Doctor/Checks/PortProxyCheck.cs:119-134`
 
----
-
-### `StalePortProxyCheck` and `PortProxyApplicator` must query the correct WSL distro
-
-Previously both used `wsl -- ss -tlnp` which queries the DEFAULT WSL distro (e.g. Ubuntu), not `crosspose-data` where podman runs. This caused valid port proxy rules to be incorrectly identified as stale and deleted. Fixed 2026-04-06 to use `wsl -d {CrossposeEnvironment.WslDistro}` and fall back to `netstat -tlnp` since Alpine doesn't ship `ss`.
-
-The `netstat` output format differs from `ss` — column indices for local address are different. Parser now uses flexible token matching instead of fixed column index.
-
-**Files**: `src/Crosspose.Doctor/Checks/StalePortProxyCheck.cs`, `src/Crosspose.Core/Networking/PortProxyApplicator.cs`
-
----
-
-### App service host port range conflicts with Windows dynamic ports
-
-`ComposeGenerator.GetNextHostPort()` previously allocated from 60000-65000, which overlaps with the Windows dynamic port range (49152-65535). Ports in this range may be reserved by Windows and unavailable for WSL port forwarding. Fixed 2026-04-06 to use 30000-39999. Infra ports use 40000-49999 (already safe).
-
-**File**: `src/Crosspose.Dekompose/Services/ComposeGenerator.cs:1044`

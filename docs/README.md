@@ -29,20 +29,64 @@ Linux containers reach Windows services (Docker Desktop) via the WSL host interf
 
 Both directions are automated — `crosspose up` applies port proxies, and Doctor fixes anything that needs elevation or firewall rules.
 
+## Architecture
+
+```mermaid
+graph TD
+    Core["Crosspose.Core\n(library)"]
+    Doctor["Crosspose.Doctor\n(library)"]
+    Dekompose["Crosspose.Dekompose\n(library)"]
+    Ui["Crosspose.Ui\n(WPF library)"]
+
+    Cli["Crosspose.Cli\n(CLI)"]
+    DoctorCli["Crosspose.Doctor.Cli\n(CLI)"]
+    DekomposeCli["Crosspose.Dekompose.Cli\n(CLI)"]
+
+    Gui["Crosspose.Gui\n(WPF)"]
+    DoctorGui["Crosspose.Doctor.Gui\n(WPF)"]
+    DekomposeGui["Crosspose.Dekompose.Gui\n(WPF)"]
+
+    Doctor --> Core
+    Dekompose --> Core
+    Ui --> Core
+    Ui --> Doctor
+
+    Cli --> Core
+    Cli --> Doctor
+
+    DoctorCli --> Core
+    DoctorCli --> Doctor
+
+    DekomposeCli --> Core
+    DekomposeCli --> Dekompose
+
+    DoctorGui --> Core
+    DoctorGui --> Doctor
+
+    DekomposeGui --> Core
+    DekomposeGui --> Dekompose
+    DekomposeGui --> Doctor
+    DekomposeGui --> Ui
+
+    Gui --> Core
+    Gui --> Doctor
+    Gui --> Ui
+```
+
 ## Projects
 
-| Project | Type | Description |
-|---------|------|-------------|
+| Project | Type | Docs |
+|---------|------|------|
 | [Crosspose.Core](crosspose.core/README.md) | Library | Shared infrastructure: process runner, container runtime abstractions, NAT/WSL host resolution, port proxy applicator, logging |
-| [Crosspose.Dekompose](crosspose.dekompose/README.md) | Library | Helm-to-Compose conversion: renders charts, splits by OS, remaps URLs, scaffolds infra |
-| [Crosspose.Dekompose.Cli](crosspose.dekompose/README.md) | CLI | Entry point for Dekompose |
-| [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/README.md) | WPF | Chart/repo/values selection, runs conversion, manages chart sources |
-| [Crosspose.Cli](crosspose/README.md) | CLI | Unified CLI: `ps`, `up`, `down`, `deploy`, `sources`, `container`, `images`, `volumes` |
 | [Crosspose.Doctor](crosspose.doctor/README.md) | Library | 21 prerequisite checks with automatic and manual fixes |
-| [Crosspose.Doctor.Cli](crosspose.doctor/README.md) | CLI | `--fix` attempts automated remediation |
-| [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md) | WPF | Per-item Fix buttons, Fix All, offline mode |
+| [Crosspose.Dekompose](crosspose.dekompose/README.md) | Library | Helm-to-Compose conversion: renders charts, splits by OS, remaps URLs, scaffolds infra |
+| [Crosspose.Ui](crosspose.ui/README.md) | WPF library | Shared WPF components used by all GUI projects |
+| [Crosspose.Cli](crosspose.cli/README.md) | CLI | Unified CLI: `ps`, `up`, `down`, `deploy`, `sources`, `container`, `images`, `volumes` |
+| [Crosspose.Doctor.Cli](crosspose.doctor.cli/README.md) | CLI | `--fix` attempts automated remediation |
+| [Crosspose.Dekompose.Cli](crosspose.dekompose.cli/README.md) | CLI | Entry point for Dekompose |
 | [Crosspose.Gui](crosspose.gui/README.md) | WPF | Main dashboard: Helm Charts, Compose Bundles, Projects, Containers, Images, Volumes |
-| [Crosspose.Ui](crosspose.gui/README.md) | Library | Shared WPF components used by all GUI projects |
+| [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md) | WPF | Per-item Fix buttons, Fix All, offline mode |
+| [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/README.md) | WPF | Chart/repo/values selection, runs conversion, manages chart sources |
 
 ## Reference
 

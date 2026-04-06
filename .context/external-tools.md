@@ -45,7 +45,7 @@ Every external CLI invoked by Crosspose, via `ProcessRunner.RunAsync`.
 - `wsl --import <name> "<dir>" "<tar>" --version 2` — import distro
 - `wsl --unregister <name>` — remove distro
 - `wsl -d <distro> -- sh -c "<command>"` — run command inside distro
-- `wsl -- ss -tlnp` — list listening TCP ports inside WSL (used by PortProxyApplicator stale-rule cleanup)
+- `wsl -d <distro> -- sh -c "ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null"` — list listening TCP ports in the configured distro (Alpine ships `netstat`, not `ss`; used by `StalePortProxyCheck` and `PortProxyApplicator`)
 
 ## winget
 
