@@ -11,6 +11,9 @@ The sidebar is split into setup and runtime sections:
 Each view swaps toolbars and data sources based on the selection, so the same window can manage compose inputs and runtime state.
 
 ## Charts view
+
+![Charts view](../../assets/screencaps/crosspose-gui-charts-view.png)
+
 The Charts view browses `{AppData}/helm-charts/` for `.tgz` files. From here you can:
 - **Open Folder** — open the directory in Explorer.
 - **New** — opens `PickChartWindow` (from `Crosspose.Ui`) to browse chart sources and pull a tgz.
@@ -20,6 +23,9 @@ The Charts view browses `{AppData}/helm-charts/` for `.tgz` files. From here you
 - **Delete** — removes the selected tgz from disk.
 
 ## Compose Bundles
+
+![Compose Bundles view](../../assets/screencaps/crosspose-gui-bundles-view.png)
+
 Compose bundles are zip files containing `docker-compose.<workload>.<os>.yml` files produced by Dekompose. When you deploy a bundle, the GUI extracts it into `compose.deployment-directory` and creates a project entry. That project is the unit for future `up`, `down`, `restart`, `logs`, and `ps` actions.
 
 The Compose Bundles toolbar surfaces:
@@ -27,17 +33,38 @@ The Compose Bundles toolbar surfaces:
 - Refresh (reloads bundles from disk)
 
 ## Projects view
+
+![Projects view](../../assets/screencaps/crosspose-gui-projects-view.png)
+
 Projects are derived from the deployment folders. Selecting a project enables the compose action buttons (Up, Down, Restart, Stop, Start, Remove). These actions call into `Crosspose.Core.Orchestration.ComposeOrchestrator`, which mirrors the CLI behavior for Docker and Podman.
 
 ## Containers view
+
+![Containers view](../../assets/screencaps/crosspose-gui-containers-view.png)
+
 The containers grid merges Docker and Podman containers into one list. Actions available today:
 
 - Start, Stop, Delete
 - Details (opens `ContainerDetailsWindow`)
 
-The details window includes a live logs tab. Other tabs (inspect, mounts, exec, files, stats) are present but currently display placeholder text.
+The details window includes tabs for logs, inspection, bind mounts, exec, files, and stats:
+
+![Container details - Logs](../../assets/screencaps/crosspose-gui-container-details-logs.png)
+
+![Container details - Inspect](../../assets/screencaps/crosspose-gui-container-details-inspect.png)
+
+![Container details - Bind mounts](../../assets/screencaps/crosspose-gui-container-details-mounts.png)
+
+![Container details - Exec](../../assets/screencaps/crosspose-gui-container-details-exec.png)
+
+![Container details - Stats](../../assets/screencaps/crosspose-gui-container-details-stats.png)
 
 ## Images and volumes
+
+![Images view](../../assets/screencaps/crosspose-gui-images-view.png)
+
+![Volumes view](../../assets/screencaps/crosspose-gui-volumes-view.png)
+
 Images and Volumes are surfaced as aggregated lists from Docker and Podman.
 
 - **Images toolbar**: Prune Unused (removes all images not referenced by any container across Docker and Podman), Delete (selected items).
@@ -55,6 +82,11 @@ The Tools menu provides:
 - **Enable Portable Mode** — opens `PortableModeWindow` to migrate data and create a `.portable` marker (only visible in non-portable mode).
 
 ## View menu
+
+![Dark mode](../../assets/screencaps/crosspose-gui-dark-mode.png)
+
+![Light mode](../../assets/screencaps/crosspose-gui-light-mode.png)
+
 - **Enable Dark Mode / Enable Light Mode** — toggles theme at runtime; persisted to `compose.gui.dark-mode` in `crosspose.yml`.
 
 ## Dependencies and configuration

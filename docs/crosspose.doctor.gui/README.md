@@ -4,6 +4,9 @@
 Crosspose.Doctor.Gui is a WPF shell around the prerequisite checks exposed by `Crosspose.Doctor`. It runs the same checks and fixes as the CLI, but with an interactive UI for status, remediation, and logs.
 
 ## Checks dashboard
+
+![Doctor checks dashboard](../../assets/screencaps/crosspose-doctor-gui-main.png)
+
 The dashboard runs the full suite of checks on load and shows:
 - Name and description of the requirement.
 - Pass/Fail/Warning result.

@@ -3,6 +3,9 @@
 This page describes the WPF workflow that wraps Dekompose and how it maps to CLI flags.
 
 ## Overview
+
+![Dekompose GUI](../../assets/screencaps/crosspose-dekompose-gui-main.png)
+
 Crosspose.Dekompose.Gui is a WPF wizard for chart-to-compose conversions. It wraps the same logic as `Crosspose.Dekompose`, but exposes repo selection, values editing, and output options in a single UI.
 
 ## Launching with a pre-supplied chart
