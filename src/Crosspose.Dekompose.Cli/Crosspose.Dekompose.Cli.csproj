@@ -10,7 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\Crosspose.Core\\Crosspose.Core.csproj" />
-    <ProjectReference Include="..\\Crosspose.Dekompose\\Crosspose.Dekompose.csproj" />
+    <ProjectReference Include="..\\Crosspose.Dekompose.Core\\Crosspose.Dekompose.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

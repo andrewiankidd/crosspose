@@ -2,8 +2,8 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using Crosspose.Core.Configuration;
 using Crosspose.Core.Diagnostics;
-using Crosspose.Doctor;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core;
+using Crosspose.Doctor.Core.Checks;
 using Microsoft.Extensions.Logging;
 
 namespace Crosspose.Doctor.Gui;

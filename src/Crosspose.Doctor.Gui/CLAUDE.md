@@ -1,6 +1,6 @@
 # CLAUDE.md — Crosspose.Doctor.Gui
 
-See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor library](../Crosspose.Doctor/CLAUDE.md)
+See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor library](../Crosspose.Doctor.Core/CLAUDE.md)
 
 ## Purpose
 

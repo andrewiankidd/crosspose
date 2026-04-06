@@ -1,5 +1,5 @@
 using Crosspose.Core.Diagnostics;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Crosspose.Doctor.Tests.Checks;
@@ -14,7 +14,7 @@ public class ICheckFixContractTests
 
     public static IEnumerable<object[]> AllBuiltInChecks()
     {
-        var checks = Crosspose.Doctor.CheckCatalog.LoadAll();
+        var checks = Crosspose.Doctor.Core.CheckCatalog.LoadAll();
         foreach (var check in checks)
         {
             yield return new object[] { check };

@@ -13,7 +13,7 @@ If a `.portable` file exists beside the executable, Crosspose switches to portab
 - `compose.log-file` - Override where the shared logger writes its file sink (`Crosspose.Core.Logging.CrossposeLoggerFactory`).
 - `compose.gui.refresh-interval-seconds` - Refresh cadence for the main GUI views (defaults to 5 seconds).
 - `compose.gui.dark-mode` - `true` to persist dark mode preference in Crosspose.Gui (toggled via **View > Enable Dark/Light Mode**).
-- `compose.wsl.*` - Default distro/user/password that `Crosspose.Doctor` uses for the dedicated WSL instance when no environment overrides exist.
+- `compose.wsl.*` - Default distro/user/password that `Crosspose.Doctor.Core` uses for the dedicated WSL instance when no environment overrides exist.
 - `offline-mode` - `true` to suppress connectivity-requiring Doctor checks (Azure CLI, ACR auth). Toggle via **Tools > Enable/Disable Offline Mode** in Crosspose.Gui.
 - `oci-registries` - Registry list maintained by `Crosspose.Core.Orchestration.OciRegistryStore`.
 - `doctor.additional-checks` - Doctor-specific additional check keys (`azure-cli`, `azure-acr-auth-win:<registry>`, `azure-acr-auth-lin:<registry>`, `port-proxy:<listenPort>:<connectPort>@<network>`, etc.) that should always be enabled.
@@ -81,7 +81,7 @@ Each rule is matched against the chart name (glob semantics). The rule can decla
 
 - `infra`: Containers Dekompose should scaffold in addition to the chart workloads. Infra definitions support `image`, `environment`, `command`, `volumes`, `os`, and `ports` just like compose. Host ports automatically trigger a `port-proxy:<listenPort>:<connectPort>@<network>` Doctor check so the Windows host forwards traffic from Docker to Podman.
 - `secretKeyRefs`: Hierarchical namespaces (for example `keyvault`, `split-io`) that contain literal or file secrets. Secrets support `convert_from_base64` for binary blobs, and placeholders like `{{INFRA[MSSQL].ENVIRONMENT[SA_PASSWORD]}}` resolve to the infra values declared above. Use `{{INFRA[MSSQL].HOSTNAME}}` to point workloads at the right infra endpoint regardless of whether the workload runs in Docker (Windows) or Podman (WSL). If a value begins with a token (for example `value: "{{INFRA[MSSQL].HOSTNAME}},1433"`), wrap it in quotes; YAML plain scalars cannot start with `{`.
-- `env`: (See the [Crosspose.Dekompose doc](crosspose.dekompose/README.md)) list of environment rewrite rules that target the infra definitions.
+- `env`: (See the [Crosspose.Dekompose.Core doc](crosspose.dekompose.core/README.md)) list of environment rewrite rules that target the infra definitions.
 
 ### `doctor.additional-checks`
 

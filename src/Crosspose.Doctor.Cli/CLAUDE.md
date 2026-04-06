@@ -1,6 +1,6 @@
 # CLAUDE.md — Crosspose.Doctor.Cli
 
-See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor library](../Crosspose.Doctor/CLAUDE.md)
+See also: [root CLAUDE.md](../../CLAUDE.md) | [Doctor library](../Crosspose.Doctor.Core/CLAUDE.md)
 
 ## Purpose
 
@@ -14,4 +14,4 @@ Thin CLI entry point for Doctor. Iterates checks from `CheckCatalog`, prints res
 
 ## Dependencies
 
-- `Crosspose.Core`, `Crosspose.Doctor`
+- `Crosspose.Core`, `Crosspose.Doctor.Core`

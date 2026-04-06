@@ -28,4 +28,4 @@ Crosspose.Core provides the shared building blocks used by every CLI and GUI. Th
 
 ## Related docs
 - [Crosspose.Cli](../crosspose.cli/README.md) for orchestration behavior.
-- [Crosspose.Dekompose](../crosspose.dekompose/README.md) for chart rendering.
+- [Crosspose.Dekompose.Core](../crosspose.dekompose.core/README.md) for chart rendering.

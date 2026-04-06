@@ -73,5 +73,5 @@ View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, 
 
 `PortProxyCheck.FixAsync` adds `netsh advfirewall firewall add rule` on every fix run but never checks if the rule already exists. Firewall `add` silently creates duplicates (unlike portproxy `add` which updates). Over time, hundreds of identical rules accumulate. The fix should check for existing rules by name before adding, or delete-then-add.
 
-**File**: `src/Crosspose.Doctor/Checks/PortProxyCheck.cs:119-134`
+**File**: `src/Crosspose.Doctor.Core/Checks/PortProxyCheck.cs:119-134`
 
