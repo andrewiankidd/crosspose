@@ -1224,9 +1224,9 @@ public sealed class ComposeGenerator
                 var url = $"http://localhost:{portStr}{path}";
                 test = isWindows
                     ? new List<object?> { "CMD", "powershell", "-command",
-                        $"try {{ Invoke-WebRequest -UseBasicParsing -Uri '{url}' | Out-Null }} catch {{ exit 1 }}" }
-                    // bash /dev/tcp is available in any bash-equipped image without requiring curl/wget.
-                    : new List<object?> { "CMD-SHELL", $"bash -c 'echo > /dev/tcp/localhost/{portStr}'" };
+                        $"try {{ Invoke-WebRequest -UseBasicParsing -Uri '{url}' -TimeoutSec 5 | Out-Null }} catch {{ exit 1 }}" }
+                    // Use wget (Alpine) or curl as fallback; bash /dev/tcp is not available on Alpine/distroless.
+                    : new List<object?> { "CMD-SHELL", $"wget -qO- http://localhost:{portStr}/ || curl -sf http://localhost:{portStr}/ || exit 1" };
             }
         }
 
