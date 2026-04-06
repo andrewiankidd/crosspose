@@ -17,5 +17,5 @@ Shared WPF component library used by all GUI projects. Contains reusable windows
 ## Dependencies
 
 - `Crosspose.Core` — for `HelmClient`, `CrossposeEnvironment`, configuration, logging.
-- `Crosspose.Doctor` — for `DoctorCheckRegistrar`.
+- `Crosspose.Doctor.Core` — for `DoctorCheckRegistrar`.
 - `net10.0-windows10.0.19041`, `UseWPF=true`.

@@ -11,7 +11,7 @@ using Crosspose.Core.Logging;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Orchestration;
 using Crosspose.Core.Sources;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 using Microsoft.Extensions.Logging;
 
 namespace Crosspose.Ui;

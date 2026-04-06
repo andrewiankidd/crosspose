@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Crosspose.Core\Crosspose.Core.csproj" />
-    <ProjectReference Include="..\Crosspose.Doctor\Crosspose.Doctor.csproj" />
+    <ProjectReference Include="..\Crosspose.Doctor.Core\Crosspose.Doctor.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,5 @@
-using Crosspose.Dekompose.Services;
+using Crosspose.Core.Configuration;
+using Crosspose.Dekompose.Core.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Crosspose.Dekompose.Tests.Services;
@@ -131,7 +132,7 @@ public class ComposeGeneratorTests : IDisposable
         var outDir = Path.Combine(_tempDir, "output");
         Directory.CreateDirectory(outDir);
 
-        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<Core.Configuration.DekomposeRuleSet>(), CancellationToken.None);
+        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<DekomposeRuleSet>(), CancellationToken.None);
 
         var files = Directory.GetFiles(outDir, "docker-compose.*.yml");
         Assert.NotEmpty(files);
@@ -145,7 +146,7 @@ public class ComposeGeneratorTests : IDisposable
         var outDir = Path.Combine(_tempDir, "output");
         Directory.CreateDirectory(outDir);
 
-        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<Core.Configuration.DekomposeRuleSet>(), CancellationToken.None);
+        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<DekomposeRuleSet>(), CancellationToken.None);
 
         var files = Directory.GetFiles(outDir, "docker-compose.*.yml");
         Assert.NotEmpty(files);
@@ -159,7 +160,7 @@ public class ComposeGeneratorTests : IDisposable
         var outDir = Path.Combine(_tempDir, "output");
         Directory.CreateDirectory(outDir);
 
-        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<Core.Configuration.DekomposeRuleSet>(), CancellationToken.None);
+        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<DekomposeRuleSet>(), CancellationToken.None);
 
         var files = Directory.GetFiles(outDir, "docker-compose.*.yml");
         Assert.True(files.Length >= 2, $"Expected at least 2 compose files, got {files.Length}");
@@ -172,7 +173,7 @@ public class ComposeGeneratorTests : IDisposable
         var outDir = Path.Combine(_tempDir, "output");
         Directory.CreateDirectory(outDir);
 
-        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<Core.Configuration.DekomposeRuleSet>(), CancellationToken.None);
+        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<DekomposeRuleSet>(), CancellationToken.None);
 
         var composeFiles = Directory.GetFiles(outDir, "docker-compose.*.yml");
         Assert.Empty(composeFiles);
@@ -193,7 +194,7 @@ public class ComposeGeneratorTests : IDisposable
         Directory.CreateDirectory(outDir);
 
         // Should not throw — ConfigMaps alone don't produce compose files
-        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<Core.Configuration.DekomposeRuleSet>(), CancellationToken.None);
+        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<DekomposeRuleSet>(), CancellationToken.None);
     }
 
     [Fact]
@@ -203,7 +204,7 @@ public class ComposeGeneratorTests : IDisposable
         var outDir = Path.Combine(_tempDir, "output");
         Directory.CreateDirectory(outDir);
 
-        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<Core.Configuration.DekomposeRuleSet>(), CancellationToken.None);
+        await _generator.GenerateAsync(manifest, outDir, "test-net", false, false, Array.Empty<DekomposeRuleSet>(), CancellationToken.None);
 
         var files = Directory.GetFiles(outDir, "docker-compose.*.yml");
         foreach (var file in files)

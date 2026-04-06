@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Input;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging.Internal;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 using Microsoft.Extensions.Logging;
 
 namespace Crosspose.Doctor.Gui;

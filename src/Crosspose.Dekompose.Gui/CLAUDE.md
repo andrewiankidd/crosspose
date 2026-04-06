@@ -1,6 +1,6 @@
 # CLAUDE.md — Crosspose.Dekompose.Gui
 
-See also: [root CLAUDE.md](../../CLAUDE.md) | [Dekompose library](../Crosspose.Dekompose/CLAUDE.md)
+See also: [root CLAUDE.md](../../CLAUDE.md) | [Dekompose library](../Crosspose.Dekompose.Core/CLAUDE.md)
 
 ## Purpose
 

@@ -2,7 +2,7 @@
 
 ## Adding a New Doctor Check
 
-1. Create a class implementing `ICheckFix` in `src/Crosspose.Doctor/Checks/`.
+1. Create a class implementing `ICheckFix` in `src/Crosspose.Doctor.Core/Checks/`.
 2. Set `IsAdditional = false` for always-on checks, or `true` with an `AdditionalKey` for opt-in checks.
 3. If the check requires network/cloud connectivity (e.g., Azure auth), override `bool RequiresConnectivity => true;` so it is skipped in offline mode.
 4. Add to the list in `CheckCatalog.LoadAll()`.
