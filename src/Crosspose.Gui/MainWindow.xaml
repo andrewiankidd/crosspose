@@ -449,11 +449,12 @@
                             </ListView.Resources>
                             <ListView.View>
                                 <GridView>
-                                    <GridViewColumn Header="Project" Width="220" DisplayMemberBinding="{Binding Project}" />
-                                    <GridViewColumn Header="Version" Width="160" DisplayMemberBinding="{Binding Version}" />
-                                    <GridViewColumn Header="Last Action" Width="160" DisplayMemberBinding="{Binding LastAction}" />
-                                    <GridViewColumn Header="Updated" Width="160" DisplayMemberBinding="{Binding LastUpdated}" />
-                                    <GridViewColumn Header="Path" Width="260" DisplayMemberBinding="{Binding FullPath}" />
+                                    <GridViewColumn Header="Project" Width="200" DisplayMemberBinding="{Binding Project}" />
+                                    <GridViewColumn Header="Version" Width="120" DisplayMemberBinding="{Binding Version}" />
+                                    <GridViewColumn Header="Status" Width="140" DisplayMemberBinding="{Binding PlatformStatus}" />
+                                    <GridViewColumn Header="Last Action" Width="140" DisplayMemberBinding="{Binding LastAction}" />
+                                    <GridViewColumn Header="Updated" Width="140" DisplayMemberBinding="{Binding LastUpdated}" />
+                                    <GridViewColumn Header="Path" Width="240" DisplayMemberBinding="{Binding FullPath}" />
                                 </GridView>
                             </ListView.View>
                         </ListView>
@@ -490,7 +491,7 @@
                                     <GridViewColumn Width="32">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <CheckBox IsChecked="{Binding IsSelected}"
+                                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                           HorizontalAlignment="Center"
                                                           Checked="OnContainerSelectionChanged"
                                                           Unchecked="OnContainerSelectionChanged" />
@@ -609,7 +610,7 @@
                                     <GridViewColumn Width="40">
                                                 <GridViewColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <CheckBox IsChecked="{Binding IsSelected}"
+                                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                                   Focusable="False"
                                                                   HorizontalAlignment="Center"
                                                                   Checked="OnImageSelectionChanged"
@@ -681,7 +682,7 @@
                                     <GridViewColumn Width="40">
                                                 <GridViewColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <CheckBox IsChecked="{Binding IsSelected}"
+                                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
                                                                   Focusable="False"
                                                                   HorizontalAlignment="Center"
                                                                   Checked="OnVolumeSelectionChanged"

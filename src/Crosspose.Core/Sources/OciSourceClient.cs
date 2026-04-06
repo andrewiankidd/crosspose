@@ -21,6 +21,12 @@ public sealed class OciSourceClient : ISourceClient
     private static readonly HttpClient Http = new();
     private static readonly ConcurrentDictionary<string, Task<string?>> ScopedTokenCache = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Clears cached ACR scoped tokens so the next request re-acquires them.
+    /// Call after re-authentication to avoid stale cached failures.
+    /// </summary>
+    public static void ClearTokenCache() => ScopedTokenCache.Clear();
+
     public OciSourceClient(string url, ILogger logger)
     {
         SourceUrl = NormalizeUrl(url);
@@ -593,51 +599,59 @@ public sealed class OciSourceClient : ISourceClient
             return null;
         }
 
+        // Try AAD management token first (preferred path).
+        // If it fails (e.g. expired MFA), fall back to az acr login --expose-token
+        // which uses the ACR-specific credential and may still be valid.
+        string? refreshToken = null;
         var aad = await runner.RunAsync(azExe, "account get-access-token --resource https://management.azure.com/ --query accessToken -o tsv", cancellationToken: ct);
-        if (aad.ExitCode != 0 || string.IsNullOrWhiteSpace(aad.StandardOutput))
+        if (aad.ExitCode == 0 && !string.IsNullOrWhiteSpace(aad.StandardOutput))
+        {
+            var aadToken = aad.StandardOutput.Trim();
+            refreshToken = await ExchangeForRefreshTokenAsync(host, "access_token", aadToken, ct);
+        }
+        else
         {
             Logger.LogWarning("Failed to get AAD token for ACR catalog: {Error}", string.IsNullOrWhiteSpace(aad.StandardError) ? "no output" : aad.StandardError);
-            return null;
         }
 
-        var aadToken = aad.StandardOutput.Trim();
+        // Fallback: use az acr login --expose-token to get an ACR refresh token.
+        // Despite the field name "accessToken", az CLI returns a refresh token
+        // (it even prints a warning about this). Use it with /oauth2/token to
+        // get a properly scoped access token.
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            Logger.LogInformation("Falling back to ACR expose-token for catalog access.");
+            var registryName = host.Split('.')[0];
+            var acr = await runner.RunAsync(azExe, $"acr login --name {registryName} --expose-token --query accessToken -o tsv", cancellationToken: ct);
+            if (acr.ExitCode == 0 && !string.IsNullOrWhiteSpace(acr.StandardOutput))
+            {
+                // az CLI dumps warnings to stdout before the token; take only the last line
+                // which contains the actual JWT.
+                var lines = acr.StandardOutput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var acrRefreshToken = lines[^1].Trim().Trim('"');
+                refreshToken = acrRefreshToken;
+            }
+            else
+            {
+                Logger.LogWarning("ACR expose-token also failed: {Error}", string.IsNullOrWhiteSpace(acr.StandardError) ? "no output" : acr.StandardError);
+                return null;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(refreshToken))
+            return null;
+
+        // Exchange refresh token for a scoped access token.
         try
         {
-            var exchange = new FormUrlEncodedContent(new Dictionary<string, string?>
+            var tokenReq = new FormUrlEncodedContent(new Dictionary<string, string?>
             {
-                ["grant_type"] = "access_token",
+                ["grant_type"] = "refresh_token",
                 ["service"] = host,
-                ["access_token"] = aadToken
+                ["scope"] = scope,
+                ["refresh_token"] = refreshToken
             });
-            var exchangeResp = await Http.PostAsync($"https://{host}/oauth2/exchange", exchange, ct);
-            var exchangeBody = await exchangeResp.Content.ReadAsStringAsync(ct);
-            if (!exchangeResp.IsSuccessStatusCode)
-            {
-                Logger.LogWarning("ACR exchange failed: {Status} {Body}", exchangeResp.StatusCode, exchangeBody);
-                return null;
-            }
-
-            using var exchangeDoc = JsonDocument.Parse(exchangeBody);
-            if (!exchangeDoc.RootElement.TryGetProperty("refresh_token", out var refreshProp))
-            {
-                Logger.LogWarning("ACR exchange returned no refresh_token.");
-                return null;
-            }
-            var refresh = refreshProp.GetString();
-            if (string.IsNullOrWhiteSpace(refresh))
-            {
-                Logger.LogWarning("ACR exchange refresh_token is empty.");
-                return null;
-            }
-
-        var tokenReq = new FormUrlEncodedContent(new Dictionary<string, string?>
-        {
-            ["grant_type"] = "refresh_token",
-            ["service"] = host,
-            ["scope"] = scope,
-            ["refresh_token"] = refresh
-        });
-        var tokenResp = await Http.PostAsync($"https://{host}/oauth2/token", tokenReq, ct);
+            var tokenResp = await Http.PostAsync($"https://{host}/oauth2/token", tokenReq, ct);
             var tokenBody = await tokenResp.Content.ReadAsStringAsync(ct);
             if (!tokenResp.IsSuccessStatusCode)
             {
@@ -663,6 +677,45 @@ public sealed class OciSourceClient : ISourceClient
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "ACR catalog token acquisition failed.");
+            return null;
+        }
+    }
+
+    private async Task<string?> ExchangeForRefreshTokenAsync(string host, string grantType, string token, CancellationToken ct)
+    {
+        try
+        {
+            var exchange = new FormUrlEncodedContent(new Dictionary<string, string?>
+            {
+                ["grant_type"] = grantType,
+                ["service"] = host,
+                ["access_token"] = token
+            });
+            var exchangeResp = await Http.PostAsync($"https://{host}/oauth2/exchange", exchange, ct);
+            var exchangeBody = await exchangeResp.Content.ReadAsStringAsync(ct);
+            if (!exchangeResp.IsSuccessStatusCode)
+            {
+                Logger.LogWarning("ACR exchange failed: {Status} {Body}", exchangeResp.StatusCode, exchangeBody);
+                return null;
+            }
+
+            using var exchangeDoc = JsonDocument.Parse(exchangeBody);
+            if (!exchangeDoc.RootElement.TryGetProperty("refresh_token", out var refreshProp))
+            {
+                Logger.LogWarning("ACR exchange returned no refresh_token.");
+                return null;
+            }
+            var refresh = refreshProp.GetString();
+            if (string.IsNullOrWhiteSpace(refresh))
+            {
+                Logger.LogWarning("ACR exchange refresh_token is empty.");
+                return null;
+            }
+            return refresh;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "ACR refresh token exchange failed.");
             return null;
         }
     }

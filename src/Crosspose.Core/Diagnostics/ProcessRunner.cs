@@ -130,4 +130,67 @@ public sealed class ProcessRunner
             return new ProcessResult(-1, string.Empty, message);
         }
     }
+
+    /// <summary>
+    /// Runs a command that requires admin privileges. Attempts it directly first;
+    /// if access is denied, elevates via a UAC prompt using Start-Process -Verb RunAs.
+    /// </summary>
+    public async Task<ProcessResult> RunElevatedAsync(
+        string command,
+        string arguments,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await RunAsync(command, arguments, cancellationToken: cancellationToken);
+        if (result.IsSuccess) return result;
+
+        var output = string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError;
+        if (!IsAccessDenied(output)) return result;
+
+        _logger.LogInformation("Access denied — elevating via UAC: {Command} {Arguments}", command, arguments);
+
+        // Escape single quotes in arguments for PowerShell
+        var escapedCommand = command.Replace("'", "''");
+        var escapedArguments = arguments.Replace("'", "''");
+        var elevated = await RunAsync(
+            "powershell",
+            $"-NoProfile -Command \"Start-Process '{escapedCommand}' -ArgumentList '{escapedArguments}' -Verb RunAs -Wait\"",
+            cancellationToken: cancellationToken);
+
+        return elevated;
+    }
+
+    /// <summary>
+    /// Runs a PowerShell command that requires admin privileges. Attempts it directly first;
+    /// if access is denied, elevates via a UAC prompt.
+    /// </summary>
+    public async Task<ProcessResult> RunPowerShellElevatedAsync(
+        string psCommand,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await RunAsync(
+            "powershell",
+            $"-NoProfile -Command \"{psCommand}\"",
+            cancellationToken: cancellationToken);
+
+        if (result.IsSuccess) return result;
+
+        var output = string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError;
+        if (!IsAccessDenied(output)) return result;
+
+        _logger.LogInformation("Access denied — elevating via UAC: {Command}", psCommand);
+
+        var escapedCommand = psCommand.Replace("'", "''");
+        return await RunAsync(
+            "powershell",
+            $"-NoProfile -Command \"Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-Command','{escapedCommand}'\"",
+            cancellationToken: cancellationToken);
+    }
+
+    private static bool IsAccessDenied(string output) =>
+        (output.Contains("Access", StringComparison.OrdinalIgnoreCase) &&
+         (output.Contains("denied", StringComparison.OrdinalIgnoreCase) ||
+          output.Contains("Cannot open", StringComparison.OrdinalIgnoreCase))) ||
+        output.Contains("requires elevation", StringComparison.OrdinalIgnoreCase) ||
+        output.Contains("Run as administrator", StringComparison.OrdinalIgnoreCase) ||
+        output.Contains("E_ACCESSDENIED", StringComparison.OrdinalIgnoreCase);
 }

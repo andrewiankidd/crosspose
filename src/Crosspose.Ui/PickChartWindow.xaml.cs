@@ -315,6 +315,7 @@ public partial class PickChartWindow : Window, INotifyPropertyChanged
             if (fix.Succeeded)
             {
                 _logger.LogInformation("ACR re-authentication succeeded.");
+                OciSourceClient.ClearTokenCache();
                 AcrAuthBanner.Visibility = Visibility.Collapsed;
                 await TryAttachAcrTokenAsync(SelectedSource);
                 await LoadChartsAsync();

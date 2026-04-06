@@ -115,6 +115,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // Propagate portable mode to child processes (Doctor.Gui, Dekompose.Gui, CLI tools)
+        AppDataLocator.PropagatePortableMode();
+
         await PreloadAllViewsAsync();
         _refreshTimer.Start();
         OnPropertyChanged(nameof(LogOutput));
@@ -722,6 +725,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 UpdateDeploymentButtons();
                 UpdateSidebarCounts();
             });
+
+            // Populate container status in the background without blocking the view
+            _ = Task.Run(async () =>
+            {
+                foreach (var row in rows)
+                {
+                    // Use the directory name as the project name — this matches how
+                    // ComposeProjectLoader derives it, ensuring consistency with compose up.
+                    var dirProjectName = Path.GetFileName(row.FullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    var status = await GetDeploymentStatusAsync(row.FullPath, dirProjectName);
+                    if (!string.IsNullOrWhiteSpace(status))
+                        await Dispatcher.InvokeAsync(() => row.PlatformStatus = status);
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -730,6 +747,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             await Dispatcher.InvokeAsync(HideViewOverlay);
+        }
+    }
+
+    private async Task<string> GetDeploymentStatusAsync(string deploymentPath, string projectName)
+    {
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var runner = new ProcessRunner(_loggerFactory.CreateLogger<ProcessRunner>());
+            var states = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var total = 0;
+
+            using var layout = ComposeProjectLoader.Load(deploymentPath);
+
+            async Task QueryAsync(string tool, IReadOnlyList<ComposeFileEntry> files)
+            {
+                if (files.Count == 0) return;
+                var fileArgs = string.Join(" ", files.Select(f => $"-f \"{f.FullPath}\""));
+                var cmd = tool == "docker" ? "docker" : "wsl";
+                var prefix = tool == "docker" ? "compose" : "-- podman compose";
+                var args = $"{prefix} {fileArgs} -p {projectName} ps -a --format \"{{{{.State}}}}\"";
+                var result = await runner.RunAsync(cmd, args, cancellationToken: cts.Token);
+                if (!result.IsSuccess) return;
+                foreach (var line in result.StandardOutput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var state = line.Trim().ToLowerInvariant();
+                    if (string.IsNullOrWhiteSpace(state)) continue;
+                    states[state] = states.GetValueOrDefault(state) + 1;
+                    total++;
+                }
+            }
+
+            await QueryAsync("docker", layout.WindowsFiles);
+            await QueryAsync("podman", layout.LinuxFiles);
+
+            if (total == 0) return "Not running";
+
+            var running = states.GetValueOrDefault("running");
+            if (running == total) return $"{running}/{total} running";
+            if (running > 0) return $"{running}/{total} running";
+
+            // Show the dominant non-running state
+            var dominant = states.OrderByDescending(kvp => kvp.Value).First();
+            return $"{dominant.Value}/{total} {dominant.Key}";
+        }
+        catch
+        {
+            return string.Empty;
         }
     }
 
@@ -1015,11 +1080,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _ = ShowChartsAsync();
     }
 
-    private void OnChartsDekompose(object sender, RoutedEventArgs e)
+    private async void OnChartsDekompose(object sender, RoutedEventArgs e)
     {
         if (ChartsList.SelectedItem is not ChartFileRow row) return;
         var path = ResolveDekomposeGuiPath();
-        var argList = new List<string> { "--chart", row.FullPath, "--compress", "--infra", "--remap-ports" };
+        var argList = new List<string> { "--chart", row.FullPath, "--compress", "--infra", "--remap-ports", "--auto-run" };
         if (row.ValuesFilePath is not null)
         {
             argList.Add("--values");
@@ -1030,11 +1095,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             argList.Add("--dekompose-config");
             argList.Add(row.DekomposeConfigPath);
         }
-        LaunchOrNotify(
+        var process = LaunchAndTrack(
             "Crosspose Dekompose",
             path ?? "crosspose.dekompose.gui",
             useShell: path is null,
             args: argList.ToArray());
+
+        if (process is null) return;
+
+        // Wait for Dekompose to finish — redirect to Compose Bundles on success
+        var exitCode = await Task.Run(() => { try { process.WaitForExit(); return process.ExitCode; } catch { return -1; } });
+        if (exitCode == 0)
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                SidebarSetup.SelectedItem = SidebarBundlesItem;
+            });
+        }
     }
 
     private void OnChartsSetValuesFile(object sender, RoutedEventArgs e)
@@ -1390,14 +1467,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var deploymentPath = deploymentResult.TargetPath;
             _logger.LogInformation("Prepared deployment at {DeploymentPath} from {Source}", deploymentPath, entry.FullPath);
 
+            // Don't pass ProjectName — let ComposeProjectLoader derive it from the
+            // deployment directory name (the version timestamp). This ensures consistent
+            // naming between deploy and subsequent Up actions, and avoids collisions when
+            // the same chart is dekomposed multiple times.
             var request = new ComposeExecutionRequest(
                 deploymentPath,
                 ComposeAction.Up,
-                Detached: true,
-                ProjectName: entry.Name);
+                Detached: true);
 
             var result = await _composeOrchestrator.ExecuteAsync(request);
             AppendComposeLog(result);
+
+            // Update deployment metadata with the actual action (not just "Prepared")
+            var label = $"up @ {DateTime.Now:t}";
+            DeploymentMetadataStore.Update(deploymentPath, metadata =>
+            {
+                metadata.LastAction = label;
+                metadata.Project = entry.Name;
+                metadata.Version = entry.Version;
+            });
 
             if (result.PortProxyFixRequired)
             {
@@ -1415,6 +1504,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 MessageBox.Show(this, $"Deployment '{entry.Name}' prepared and launched successfully.", "Crosspose", MessageBoxButton.OK, MessageBoxImage.Information);
             }
+
+            // Navigate to Projects view so the user can see the running deployment
+            SidebarRuntime.SelectedItem = SidebarProjectsItem;
         }
         catch (Exception ex)
         {
@@ -2098,6 +2190,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void LaunchOrNotify(string friendlyName, string processName, bool useShell = true, IEnumerable<string>? args = null)
     {
+        LaunchAndTrack(friendlyName, processName, useShell, args);
+    }
+
+    private Process? LaunchAndTrack(string friendlyName, string processName, bool useShell = true, IEnumerable<string>? args = null)
+    {
         _logger.LogInformation("Attempting to launch {FriendlyName} via {Process}", friendlyName, processName);
         try
         {
@@ -2129,7 +2226,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 psi.UseShellExecute = true;
             }
 
-            Process.Start(psi);
+            return Process.Start(psi);
         }
         catch (Exception ex)
         {
@@ -2140,6 +2237,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "Crosspose",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
+            return null;
         }
     }
 

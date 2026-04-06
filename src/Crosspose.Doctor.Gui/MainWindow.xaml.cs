@@ -42,7 +42,7 @@ public partial class MainWindow : Window
                 var result = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
                 vm.Result = result.Message;
                 vm.IsSuccess = result.IsSuccessful;
-                vm.IsFixEnabled = !result.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
+                vm.IsFixEnabled = !result.IsSuccessful && vm.Check.CanFix;
             }
             FixAllButton.IsEnabled = _items.Any(vm => vm.IsFixEnabled);
             await RunAutoFixAsync();
@@ -72,8 +72,7 @@ public partial class MainWindow : Window
             if (vm is null) return;
             vm.Result = result.Message;
             vm.IsSuccess = result.IsSuccessful;
-            // AutoFix checks are handled by the monitor; no manual Fix button for them.
-            vm.IsFixEnabled = !result.IsSuccessful && check.CanFix && !check.AutoFix;
+            vm.IsFixEnabled = !result.IsSuccessful && check.CanFix;
             FixAllButton.IsEnabled = _items.Any(v => v.IsFixEnabled);
         });
     }
@@ -100,7 +99,7 @@ public partial class MainWindow : Window
                 var verify = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
                 vm.Result = verify.Message;
                 vm.IsSuccess = verify.IsSuccessful;
-                vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
+                vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix;
             }
             catch
             {
@@ -123,13 +122,13 @@ public partial class MainWindow : Window
         {
             vm.Result = dialog.FinalMessage;
             vm.IsSuccess = dialog.Success;
-            vm.IsFixEnabled = !dialog.Success && !vm.Check.AutoFix;
+            vm.IsFixEnabled = !dialog.Success;
             if (dialog.Success)
             {
                 var verify = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
                 vm.Result = verify.Message;
                 vm.IsSuccess = verify.IsSuccessful;
-                vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
+                vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix;
             }
         }
 
@@ -153,7 +152,7 @@ public partial class MainWindow : Window
             var verify = await vm.Check.RunAsync(_runner, _loggerFactory.CreateLogger(vm.Check.Name), default);
             vm.Result = verify.Message;
             vm.IsSuccess = verify.IsSuccessful;
-            vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix && !vm.Check.AutoFix;
+            vm.IsFixEnabled = !verify.IsSuccessful && vm.Check.CanFix;
         }
 
         FixAllButton.IsEnabled = _items.Any(vm => vm.IsFixEnabled);

@@ -282,6 +282,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     ClearBusy();
                 }
             }
+
+            if (App.AutoRun)
+            {
+                await RunDekomposeAsync(autoClose: true);
+            }
             return;
         }
 
@@ -825,6 +830,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnDekomposeClick(object sender, RoutedEventArgs e)
     {
+        await RunDekomposeAsync(autoClose: false);
+    }
+
+    private async Task RunDekomposeAsync(bool autoClose)
+    {
         if (SelectedChart is null)
         {
             StatusMessage = "Select a chart first.";
@@ -901,6 +911,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!string.IsNullOrWhiteSpace(result.StandardOutput)) AppendLog(result.StandardOutput);
             if (!string.IsNullOrWhiteSpace(result.StandardError)) AppendLog(result.StandardError);
             StatusMessage = result.IsSuccess ? "Dekompose completed." : "Dekompose failed.";
+            if (result.IsSuccess && autoClose)
+            {
+                System.Windows.Application.Current.Shutdown(0);
+                return;
+            }
             if (!result.IsSuccess)
             {
                 var message = string.IsNullOrWhiteSpace(result.StandardError)

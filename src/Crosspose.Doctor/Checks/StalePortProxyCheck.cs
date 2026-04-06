@@ -60,7 +60,7 @@ public sealed class StalePortProxyCheck : ICheckFix
         foreach (var rule in stale)
         {
             var args = $"interface portproxy delete v4tov4 listenaddress={rule.ListenAddress} listenport={rule.ListenPort}";
-            var result = await runner.RunAsync("netsh", args, cancellationToken: cancellationToken);
+            var result = await runner.RunElevatedAsync("netsh", args, cancellationToken);
             if (result.IsSuccess)
             {
                 logger.LogInformation("Removed stale portproxy rule: {Address}:{Port}", rule.ListenAddress, rule.ListenPort);

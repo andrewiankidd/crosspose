@@ -13,11 +13,10 @@ namespace Crosspose.Core.Configuration;
 public static class AppDataLocator
 {
     private static readonly string LocalRoot =
-        AppContext.BaseDirectory?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-        ?? Directory.GetCurrentDirectory();
+        ResolveLocalRoot();
 
     private static readonly bool IsPortable =
-        File.Exists(Path.Combine(LocalRoot, ".portable"));
+        DetectPortableMode(LocalRoot);
 
     private static readonly string LegacyRoamingRoot =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "crosspose");
@@ -141,6 +140,44 @@ public static class AppDataLocator
         {
             Directory.CreateDirectory(directory);
         }
+    }
+
+    /// <summary>
+    /// Sets the CROSSPOSE_PORTABLE_ROOT environment variable so child processes
+    /// inherit portable mode without needing their own .portable marker.
+    /// Call this from the main GUI process after detecting portable mode.
+    /// </summary>
+    public static void PropagatePortableMode()
+    {
+        if (IsPortable)
+        {
+            Environment.SetEnvironmentVariable("CROSSPOSE_PORTABLE_ROOT", LocalRoot, EnvironmentVariableTarget.Process);
+        }
+    }
+
+    private static string ResolveLocalRoot()
+    {
+        // If a parent process set CROSSPOSE_PORTABLE_ROOT, use that as our root.
+        // This ensures child processes (Doctor.Gui, CLI tools launched from GUI)
+        // see the same portable root regardless of their own AppContext.BaseDirectory.
+        var envRoot = Environment.GetEnvironmentVariable("CROSSPOSE_PORTABLE_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot) && Directory.Exists(envRoot))
+            return envRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return AppContext.BaseDirectory?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            ?? Directory.GetCurrentDirectory();
+    }
+
+    private static bool DetectPortableMode(string root)
+    {
+        // Explicit env var from parent process — GUI sets this so child processes
+        // (Doctor.Gui, Dekompose.Gui, CLI tools) inherit portable mode.
+        var envRoot = Environment.GetEnvironmentVariable("CROSSPOSE_PORTABLE_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+            return true;
+
+        // Direct .portable marker next to the executable
+        return File.Exists(Path.Combine(root, ".portable"));
     }
 
     private static void TryMigratePortableData()
