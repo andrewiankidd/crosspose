@@ -153,7 +153,7 @@ public sealed class ProcessRunner
         var escapedArguments = arguments.Replace("'", "''");
         var elevated = await RunAsync(
             "powershell",
-            $"-NoProfile -Command \"Start-Process '{escapedCommand}' -ArgumentList '{escapedArguments}' -Verb RunAs -Wait\"",
+            $"-NoProfile -Command \"Start-Process '{escapedCommand}' -ArgumentList '{escapedArguments}' -Verb RunAs -Wait -WindowStyle Hidden\"",
             cancellationToken: cancellationToken);
 
         return elevated;
@@ -182,7 +182,7 @@ public sealed class ProcessRunner
         var escapedCommand = psCommand.Replace("'", "''");
         return await RunAsync(
             "powershell",
-            $"-NoProfile -Command \"Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-Command','{escapedCommand}'\"",
+            $"-NoProfile -Command \"Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','{escapedCommand}'\"",
             cancellationToken: cancellationToken);
     }
 

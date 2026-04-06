@@ -125,6 +125,68 @@ public static class PortProxyApplicator
             }
         }
 
+        // Step 5: apply reverse port proxy rules (Linux → Windows) on the WSL-facing interface
+        var reverseRequirements = checks
+            .Select(k =>
+            {
+                if (!Configuration.PortProxyKey.TryParse(k, out _, out _, out _)) return null;
+                return k;
+            })
+            .Where(k => k is not null)
+            .ToList();
+
+        // Load reverse requirements from all deployment directories
+        var deploymentRoot = Configuration.CrossposeEnvironment.DeploymentDirectory;
+        if (Directory.Exists(deploymentRoot))
+        {
+            var reverseReqs = new List<Deployment.ReversePortProxyRequirement>();
+            foreach (var projectDir in Directory.GetDirectories(deploymentRoot))
+            {
+                foreach (var versionDir in Directory.GetDirectories(projectDir))
+                {
+                    reverseReqs.AddRange(Deployment.PortProxyRequirementLoader.LoadReverse(versionDir));
+                }
+                // Also check the project dir itself (flat structure)
+                reverseReqs.AddRange(Deployment.PortProxyRequirementLoader.LoadReverse(projectDir));
+            }
+
+            if (reverseReqs.Count > 0)
+            {
+                var wslHostIp = await WslHostResolver.ResolveAsync(runner, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(wslHostIp))
+                {
+                    proxyOutput = await GetPortProxyOutputAsync(runner, cancellationToken);
+                    foreach (var rev in reverseReqs)
+                    {
+                        if (PortProxyRuleExists(proxyOutput, wslHostIp!, rev.Port, rev.ConnectPort))
+                            continue;
+
+                        // Delete any existing rule for this listen address:port first
+                        await runner.RunElevatedAsync("netsh",
+                            $"interface portproxy delete v4tov4 listenaddress={wslHostIp} listenport={rev.Port}",
+                            cancellationToken);
+
+                        var args = $"interface portproxy add v4tov4 listenaddress={wslHostIp} listenport={rev.Port} connectaddress=127.0.0.1 connectport={rev.ConnectPort}";
+                        var result = await runner.RunElevatedAsync("netsh", args, cancellationToken);
+                        if (!result.IsSuccess && !ContainsAlreadyExists(result))
+                        {
+                            var err = (string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError).Trim();
+                            errors.Add($"reverse portproxy {wslHostIp}:{rev.Port}: {err}");
+                        }
+                        else
+                        {
+                            logger.LogInformation("Added reverse portproxy rule {Address}:{ListenPort}→{ConnectPort}", wslHostIp, rev.Port, rev.ConnectPort);
+                        }
+
+                        // Firewall rule on WSL interface
+                        var fwName = $"port-proxy-{rev.Port}-{wslHostIp!.Replace('.', '-')}";
+                        var fwArgs = $"advfirewall firewall add rule name=\"{fwName}\" dir=in action=allow protocol=TCP localip={wslHostIp} localport={rev.Port}";
+                        await runner.RunElevatedAsync("netsh", fwArgs, cancellationToken);
+                    }
+                }
+            }
+        }
+
         if (errors.Count > 0)
         {
             return PortProxyApplyResult.Failure(string.Join("; ", errors));
@@ -168,20 +230,27 @@ public static class PortProxyApplicator
 
     private static async Task<HashSet<int>?> GetWslListeningPortsAsync(ProcessRunner runner, CancellationToken cancellationToken)
     {
-        var result = await runner.RunAsync("wsl", "-- ss -tlnp", cancellationToken: cancellationToken);
+        var distro = Configuration.CrossposeEnvironment.WslDistro;
+        var result = await runner.RunAsync("wsl", $"-d {distro} -- sh -c \"ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null\"", cancellationToken: cancellationToken);
         if (!result.IsSuccess || string.IsNullOrWhiteSpace(result.StandardOutput)) return null;
 
         var ports = new HashSet<int>();
         foreach (var line in result.StandardOutput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
         {
+            // ss -tlnp columns:     Netid State Recv-Q Send-Q Local-Address:Port Peer-Address:Port Process
+            // netstat -tlnp columns: Proto Recv-Q Send-Q Local-Address:Port Foreign-Address State PID/Program
             var tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (tokens.Length < 5) continue;
-            var localAddr = tokens[4];
-            var colonIdx = localAddr.LastIndexOf(':');
-            if (colonIdx < 0) continue;
-            if (int.TryParse(localAddr[(colonIdx + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out var port))
+            foreach (var token in tokens)
             {
-                ports.Add(port);
+                var colonIdx = token.LastIndexOf(':');
+                if (colonIdx < 0) continue;
+                var portStr = token[(colonIdx + 1)..];
+                if (portStr == "*") continue;
+                if (int.TryParse(portStr, NumberStyles.None, CultureInfo.InvariantCulture, out var port) && port >= 1024)
+                {
+                    ports.Add(port);
+                    break;
+                }
             }
         }
         return ports;

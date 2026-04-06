@@ -251,7 +251,7 @@ public sealed class ComposeOrchestrator
         ComposePlatform platform,
         CancellationToken cancellationToken)
     {
-        if (request.Action != ComposeAction.Up || platform != ComposePlatform.Docker)
+        if (request.Action != ComposeAction.Up)
         {
             return null;
         }
@@ -262,16 +262,22 @@ public sealed class ComposeOrchestrator
             return null;
         }
 
+        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         var gateway = await ResolveNatGatewayAsync(network, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(gateway))
+        if (!string.IsNullOrWhiteSpace(gateway))
         {
-            return null;
+            env["NAT_GATEWAY_IP"] = gateway;
         }
 
-        return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        // Resolve the WSL host IP for Linux→Windows communication.
+        var wslHost = await Networking.WslHostResolver.ResolveAsync(_processRunner, cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(wslHost))
         {
-            ["NAT_GATEWAY_IP"] = gateway
-        };
+            env["WSL_HOST_IP"] = wslHost;
+        }
+
+        return env.Count > 0 ? env : null;
     }
 
     private static string? GetPreferredNetwork(string layoutRoot)

@@ -127,7 +127,8 @@ public sealed class StalePortProxyCheck : ICheckFix
     private static async Task<HashSet<int>?> GetWslListeningPortsAsync(
         ProcessRunner runner, CancellationToken cancellationToken)
     {
-        var result = await runner.RunAsync("wsl", "-- ss -tlnp", cancellationToken: cancellationToken);
+        var distro = Crosspose.Core.Configuration.CrossposeEnvironment.WslDistro;
+        var result = await runner.RunAsync("wsl", $"-d {distro} -- sh -c \"ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null\"", cancellationToken: cancellationToken);
 
         // Exit code non-zero or output referencing "not running" indicates WSL is unavailable.
         if (!result.IsSuccess)
@@ -143,19 +144,21 @@ public sealed class StalePortProxyCheck : ICheckFix
         var ports = new HashSet<int>();
         foreach (var line in result.StandardOutput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
         {
-            // ss -tlnp columns: Netid State Recv-Q Send-Q Local-Address:Port Peer-Address:Port Process
-            // Local address may be 0.0.0.0:PORT, [::]:PORT, 127.0.0.1:PORT, etc.
+            // ss -tlnp columns:     Netid State Recv-Q Send-Q Local-Address:Port Peer-Address:Port Process
+            // netstat -tlnp columns: Proto Recv-Q Send-Q Local-Address:Port Foreign-Address State PID/Program
+            // Try to extract a port from any column that looks like address:port.
             var tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (tokens.Length < 5) continue;
-
-            var localAddr = tokens[4]; // index 4 is Local Address:Port
-            var colonIdx = localAddr.LastIndexOf(':');
-            if (colonIdx < 0) continue;
-
-            var portStr = localAddr[(colonIdx + 1)..];
-            if (int.TryParse(portStr, NumberStyles.None, CultureInfo.InvariantCulture, out var port))
+            foreach (var token in tokens)
             {
-                ports.Add(port);
+                var colonIdx = token.LastIndexOf(':');
+                if (colonIdx < 0) continue;
+                var portStr = token[(colonIdx + 1)..];
+                if (portStr == "*") continue;
+                if (int.TryParse(portStr, NumberStyles.None, CultureInfo.InvariantCulture, out var port) && port >= 1024)
+                {
+                    ports.Add(port);
+                    break; // take the first (local) address:port match per line
+                }
             }
         }
 

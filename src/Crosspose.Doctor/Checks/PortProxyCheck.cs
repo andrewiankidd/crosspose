@@ -103,6 +103,13 @@ public sealed class PortProxyCheck : ICheckFix
 
         foreach (var address in missingAddresses)
         {
+            // Delete any existing rule for this listen address:port first — netsh add
+            // silently fails if a rule with the same listen address:port already exists
+            // with a different connect port.
+            await runner.RunElevatedAsync("netsh",
+                $"interface portproxy delete v4tov4 listenaddress={address} listenport={_listenPort}",
+                cancellationToken);
+
             var addProxyArgs =
                 $"interface portproxy add v4tov4 listenaddress={address} listenport={_listenPort} connectaddress=127.0.0.1 connectport={_connectPort}";
             var proxyResult = await runner.RunElevatedAsync("netsh", addProxyArgs, cancellationToken);
