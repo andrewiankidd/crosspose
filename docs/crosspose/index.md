@@ -42,6 +42,50 @@ dotnet run --project src/Crosspose.Cli -- compose up --dir C:\temp\dekompose-out
 dotnet run --project src/Crosspose.Cli -- up --dir C:\temp\dekompose-outputs\bundle.zip -d
 ```
 
+## Container management commands
+
+`crosspose` provides full CLI parity with the GUI for managing individual containers, images, and volumes:
+
+```powershell
+# Container lifecycle
+crosspose container start <name|id>
+crosspose container stop <name|id>
+crosspose container rm <name|id>
+crosspose container logs <name|id> [--tail N]
+crosspose container inspect <name|id>
+
+# Images
+crosspose images ls
+crosspose images rm <id|name:tag>
+crosspose images prune
+
+# Volumes
+crosspose volumes ls
+crosspose volumes rm <name>
+crosspose volumes prune
+```
+
+Containers are resolved by name or ID prefix across both Docker and Podman.
+
+## Bundle and deployment management
+
+```powershell
+# Inspect locally stored artifacts
+crosspose bundles list
+crosspose deployments list
+crosspose charts list
+
+# Deploy a compose bundle (extract and register)
+crosspose deploy C:\path\to\bundle.zip --project my-app
+
+# Remove a deployed directory
+crosspose remove --dir C:\path\to\deployment
+```
+
+## Podman restart behaviour
+
+Podman rootless containers reuse the original container's network namespace on `start`/`restart`, meaning DNS entries are stale. Crosspose works around this by issuing `podman compose up --force-recreate -d` whenever a `start` or `restart` action targets the Podman platform. This tears down and recreates the container, giving it a fresh network context.
+
 ## See also
 - [Crosspose.Gui](../crosspose.gui/index.md) for the WPF frontend.
 - [Crosspose.Core](../crosspose.core/index.md) for shared runners and orchestration helpers.

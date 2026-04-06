@@ -38,7 +38,7 @@ if (!string.IsNullOrWhiteSpace(options.DekomposeConfigPath))
 {
     try
     {
-        CrossposeConfigurationStore.MergeDekomposeConfiguration(options.DekomposeConfigPath);
+        CrossposeConfigurationStore.ApplyDekomposeConfigForSession(options.DekomposeConfigPath);
     }
     catch (Exception ex)
     {
@@ -86,9 +86,16 @@ if (options.ChartPath is not null)
     }
     if (chartInfo is not null)
     {
-        var valuesName = !string.IsNullOrWhiteSpace(options.ValuesPath) && File.Exists(options.ValuesPath)
-            ? Path.GetFileNameWithoutExtension(options.ValuesPath)
-            : null;
+        string? valuesName = null;
+        if (!string.IsNullOrWhiteSpace(options.ValuesPath) && File.Exists(options.ValuesPath))
+        {
+            var stem = Path.GetFileNameWithoutExtension(options.ValuesPath);
+            // Strip chart name+version prefix when the file follows the "<chartbase>.<label>.yaml" convention
+            var chartPrefix = $"{chartInfo.Name}-{chartInfo.Version}.";
+            valuesName = stem.StartsWith(chartPrefix, StringComparison.OrdinalIgnoreCase) && stem.Length > chartPrefix.Length
+                ? stem[chartPrefix.Length..]
+                : stem;
+        }
 
         var folderName = valuesName is null
             ? $"{chartInfo.Name}-{chartInfo.Version}-{epochStamp}"
@@ -293,26 +300,40 @@ static ChartInfo? TryReadChartInfo(string chartPath)
 {
     try
     {
+        // Directory with Chart.yaml
         var chartYaml = Path.Combine(chartPath, "Chart.yaml");
-        if (!File.Exists(chartYaml)) return null;
-
-        string? name = null;
-        string? version = null;
-        foreach (var line in File.ReadLines(chartYaml))
+        if (File.Exists(chartYaml))
         {
-            if (name is null && line.TrimStart().StartsWith("name:", StringComparison.OrdinalIgnoreCase))
+            string? name = null;
+            string? version = null;
+            foreach (var line in File.ReadLines(chartYaml))
             {
-                name = line.Split(':', 2)[1].Trim();
+                if (name is null && line.TrimStart().StartsWith("name:", StringComparison.OrdinalIgnoreCase))
+                    name = line.Split(':', 2)[1].Trim();
+                if (version is null && line.TrimStart().StartsWith("version:", StringComparison.OrdinalIgnoreCase))
+                    version = line.Split(':', 2)[1].Trim();
+                if (name is not null && version is not null) break;
             }
-            if (version is null && line.TrimStart().StartsWith("version:", StringComparison.OrdinalIgnoreCase))
-            {
-                version = line.Split(':', 2)[1].Trim();
-            }
-            if (name is not null && version is not null) break;
+            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(version))
+                return new ChartInfo(name, version);
         }
 
-        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(version)) return null;
-        return new ChartInfo(name, version);
+        // .tgz file — parse by filename convention: <name>-<version>.tgz
+        if (chartPath.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
+        {
+            var baseName = Path.GetFileNameWithoutExtension(chartPath);
+            // Version starts at the last hyphen followed by a digit
+            var lastHyphen = baseName.LastIndexOf('-');
+            if (lastHyphen > 0 && lastHyphen < baseName.Length - 1 && char.IsDigit(baseName[lastHyphen + 1]))
+            {
+                var name = baseName[..lastHyphen];
+                var version = baseName[(lastHyphen + 1)..];
+                if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(version))
+                    return new ChartInfo(name, version);
+            }
+        }
+
+        return null;
     }
     catch
     {
@@ -339,7 +360,9 @@ static ChartInfo? TryInferOciChartInfo(string chartPath)
     var repoPath = tagSplit[0];
     var tag = tagSplit.Length == 2 && !string.IsNullOrWhiteSpace(tagSplit[1]) ? tagSplit[1] : "latest";
 
-    var name = repoPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault();
+    if (string.IsNullOrWhiteSpace(repoPath)) return null;
+    // Normalise "helm/platform" → "helm-platform" for precise rule matching.
+    var name = repoPath.Replace('/', '-').Trim('-');
     if (string.IsNullOrWhiteSpace(name)) return null;
 
     return new ChartInfo(name, tag);

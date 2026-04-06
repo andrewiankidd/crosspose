@@ -36,12 +36,14 @@ public sealed class ProcessRunner
         string arguments,
         IReadOnlyDictionary<string, string>? environment = null,
         string? workingDirectory = null,
+        string? stdin = null,
         CancellationToken cancellationToken = default)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName = command,
             Arguments = arguments,
+            RedirectStandardInput = stdin is not null,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -95,6 +97,12 @@ public sealed class ProcessRunner
 
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
+
+            if (stdin is not null)
+            {
+                await process.StandardInput.WriteAsync(stdin).ConfigureAwait(false);
+                process.StandardInput.Close();
+            }
 
             await using var _ = cancellationToken.Register(() =>
             {

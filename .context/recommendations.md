@@ -6,22 +6,18 @@ Prioritized action plan.
 
 ## Quick Fixes
 
-### Replace Debug.WriteLine with proper logging
-4 locations use `System.Diagnostics.Debug.WriteLine` which is invisible in Release builds:
-- `PodmanContainerRunner.cs:127` — use `Runner.LogWarning`
-- `OciSourceClient.cs:152` — use logger
-- `FixWindow.xaml.cs:93` — acceptable (clipboard copy failure)
-- `LogViewerControl.xaml.cs:82` — acceptable (clipboard copy failure)
-
 ### Add logging to critical bare catch blocks
 The `ComposeOrchestrator` and `ComposeProjectLoader` bare catches should log at Debug level at minimum, since failures in compose file parsing are actionable.
+
+### Individual container start should force-recreate Podman containers
+`crosspose container start <name>` currently calls `combined.StartContainerAsync` which maps to `podman start` — the same stale-network-namespace problem as `restart`. Ideally this should detect the platform and issue `podman-compose up --force-recreate` for Podman containers instead.
 
 ---
 
 ## Clean Up Before Expanding
 
 ### Extract view models from MainWindow.xaml.cs (Crosspose.Gui)
-The main GUI's `MainWindow.xaml.cs` is the largest file. View models (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, `DeploymentRow`, `ProjectEntry`) should move to a `ViewModels/` folder.
+The main GUI's `MainWindow.xaml.cs` is very large. View models (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, `DeploymentRow`, `ChartFileRow`, `ProjectEntry`) should move to a `ViewModels/` folder.
 
 ### Dispose `JsonDocument` instances in container runners
 Refactor Docker's `EnumerateJsonElements` to avoid `yield return` with `JsonDocument`. Add `using` to Podman's `JsonDocument.Parse` calls.
@@ -33,15 +29,8 @@ Refactor Docker's `EnumerateJsonElements` to avoid `yield return` with `JsonDocu
 
 ## Feature Roadmap
 
-### Test infrastructure
-Create `src/Crosspose.Core.Tests/` with xUnit. Priority targets:
-- Container runner JSON parsing (both Docker/Podman formats)
-- Doctor check logic (mock `ProcessRunner`)
-- `ComposeGenerator` output validation
-- `ComposeOrchestrator` routing logic
-
 ### CI pipeline
-Once tests exist: `dotnet build` + `dotnet test`.
+`dotnet build` + `dotnet test` — tests now exist (~170 across Core, Doctor, Dekompose).
 
 ---
 

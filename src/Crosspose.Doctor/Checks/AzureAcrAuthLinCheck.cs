@@ -21,10 +21,11 @@ public sealed class AzureAcrAuthLinCheck : ICheckFix
     }
 
     public string Name => $"azure-acr-auth-lin:{_registryName}";
-    public string Description => $"Optional: verifies Podman authentication is available for {_registryName}.";
+    public string Description => $"Verifies Azure ACR auth (WSL/Podman) is available for {_registryName}.";
     public bool IsAdditional => true;
     public string AdditionalKey => $"azure-acr-auth-lin:{_registryName}";
     public bool CanFix => true;
+    public bool RequiresConnectivity => true;
 
         public async Task<CheckResult> RunAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)
         {

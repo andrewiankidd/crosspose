@@ -9,41 +9,43 @@
         MinWidth="720"
         MinHeight="500"
         Background="{DynamicResource WindowBackground}"
-        Loaded="OnLoaded">
+        DataContext="{Binding RelativeSource={RelativeSource Self}}"
+        Loaded="OnLoaded"
+        Closing="OnMainWindowClosing">
+    <Window.Resources>
+        <CollectionViewSource x:Key="ContainersView" Source="{Binding AllContainers}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="ProjectDisplay" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+    </Window.Resources>
     <DockPanel>
         <Menu DockPanel.Dock="Top" Background="{DynamicResource SidebarBackground}" Foreground="{DynamicResource TextPrimary}">
-            <Menu.Resources>
-                <Style TargetType="MenuItem">
-                    <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
-                    <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-                    <Setter Property="BorderBrush" Value="{DynamicResource SidebarBackground}" />
-                    <Style.Triggers>
-                        <Trigger Property="IsHighlighted" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
-                            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-                        </Trigger>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
-                            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-                        </Trigger>
-                    </Style.Triggers>
-                </Style>
-            </Menu.Resources>
             <MenuItem Header="_File">
                 <MenuItem Header="_Quit" Click="OnQuitClick" />
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Header="_Log View" Click="OnLogViewClick" />
+                <Separator />
+                <MenuItem Header="{Binding ThemeMenuHeader}" Click="OnToggleThemeClick" />
             </MenuItem>
-                <MenuItem Header="_Tools">
-                    <MenuItem Header="Crosspose Tools">
-                        <MenuItem Header="Crosspose _Doctor" Click="OnDoctorClick" />
-                        <MenuItem Header="Crosspose _Dekompose" Click="OnDekomposeClick" />
-                    </MenuItem>
+            <MenuItem Header="_Tools">
+                <MenuItem Header="Crosspose Tools">
+                    <MenuItem Header="Crosspose _Doctor" Click="OnDoctorClick" />
+                    <MenuItem Header="Crosspose _Dekompose" Click="OnDekomposeClick" />
+                </MenuItem>
                 <MenuItem Header="Container Tools">
                     <MenuItem Header="Docker _Desktop" Click="OnDockerDesktopClick" />
                     <MenuItem Header="_Podman Desktop" Click="OnPodmanDesktopClick" />
                 </MenuItem>
+                <Separator />
+                <MenuItem Header="Open _Configuration Directory" Click="OnOpenConfigDirectoryClick" />
+                <Separator />
+                <MenuItem Header="{Binding OfflineModeMenuHeader}"
+                          Click="OnToggleOfflineModeClick" />
+                <MenuItem Header="Enable _Portable Mode"
+                          Click="OnEnablePortableModeClick"
+                          Visibility="{Binding PortableModeMenuVisibility}" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Click="OnAboutClick" />
@@ -57,33 +59,72 @@
             </Grid.ColumnDefinitions>
 
             <Border Background="{DynamicResource SidebarBackground}" BorderBrush="{DynamicResource BorderBrushColor}" BorderThickness="0,0,1,0">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="6">
-                        <TextBlock Text="Setup" Margin="6,6,6,4" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" />
-                        <ListBox x:Name="SidebarSetup"
-                                 SelectionChanged="OnSidebarSelectionChanged"
-                                 Background="{DynamicResource SidebarBackground}"
-                                 BorderBrush="{DynamicResource BorderBrushColor}"
-                                 Foreground="{DynamicResource TextPrimary}">
-                            <ListBoxItem Content="Definitions" />
-                        </ListBox>
+                <DockPanel>
+                    <!-- Doctor status badge — always visible at the bottom of the sidebar -->
+                    <Border DockPanel.Dock="Bottom"
+                            BorderBrush="{DynamicResource BorderBrushColor}"
+                            BorderThickness="0,1,0,0"
+                            Padding="8,6">
+                        <Button Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Click="OnDoctorClick"
+                                HorizontalContentAlignment="Left"
+                                Padding="0"
+                                ToolTip="{Binding DoctorStatusTooltip}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,7,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{DynamicResource StatusNeutralFill}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding DoctorIsReady}" Value="True">
+                                                    <Setter Property="Fill" Value="{DynamicResource StatusReadyFill}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding DoctorIsNeedsAttention}" Value="True">
+                                                    <Setter Property="Fill" Value="{DynamicResource StatusWarningFill}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Text="{Binding DoctorStatusLabel}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextMuted}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </Border>
 
-                        <TextBlock Text="Runtime" Margin="6,12,6,4" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" />
-                        <ListBox x:Name="SidebarRuntime"
-                                 SelectionChanged="OnSidebarSelectionChanged"
-                                 Background="{DynamicResource SidebarBackground}"
-                                 BorderBrush="{DynamicResource BorderBrushColor}"
-                                 Foreground="{DynamicResource TextPrimary}">
-                            <ListBoxItem Content="Projects" />
-                            <ListBoxItem Content="Containers" />
-                            <ListBoxItem Content="Images" />
-                            <ListBoxItem Content="Volumes" />
-                        </ListBox>
-                    </StackPanel>
-                </ScrollViewer>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="6">
+                            <TextBlock Text="Setup" Margin="6,6,6,4" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" />
+                            <ListBox x:Name="SidebarSetup"
+                                     SelectionChanged="OnSidebarSelectionChanged"
+                                     Background="{DynamicResource SidebarBackground}"
+                                     BorderBrush="{DynamicResource BorderBrushColor}"
+                                     Foreground="{DynamicResource TextPrimary}">
+                                <ListBoxItem x:Name="SidebarChartsItem" Content="Helm Charts" Tag="Charts" />
+                                <ListBoxItem x:Name="SidebarBundlesItem" Content="Compose Bundles" Tag="Compose Bundles" />
+                            </ListBox>
+
+                            <TextBlock Text="Runtime" Margin="6,12,6,4" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" />
+                            <ListBox x:Name="SidebarRuntime"
+                                     SelectionChanged="OnSidebarSelectionChanged"
+                                     Background="{DynamicResource SidebarBackground}"
+                                     BorderBrush="{DynamicResource BorderBrushColor}"
+                                     Foreground="{DynamicResource TextPrimary}">
+                                <ListBoxItem x:Name="SidebarProjectsItem" Content="Projects" Tag="Projects" />
+                                <ListBoxItem x:Name="SidebarContainersItem" Content="Containers" Tag="Containers" />
+                                <ListBoxItem x:Name="SidebarImagesItem" Content="Images" Tag="Images" />
+                                <ListBoxItem x:Name="SidebarVolumesItem" Content="Volumes" Tag="Volumes" />
+                            </ListBox>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
             </Border>
 
-            <Grid Grid.Column="1" DataContext="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
+            <Grid Grid.Column="1">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -111,30 +152,52 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" MaxHeight="200">
-                    <ItemsControl ItemsSource="{Binding Errors}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border BorderBrush="{DynamicResource ErrorBorder}" Background="{DynamicResource ErrorBackground}" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,8">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding}" Foreground="{DynamicResource ErrorText}" TextWrapping="Wrap" Margin="0,0,0,4" />
-                                        <TextBlock Text="Open Crosspose Doctor"
-                                                   FontWeight="Bold"
-                                                   Foreground="{DynamicResource ErrorText}"
-                                                   Cursor="Hand"
-                                                   MouseLeftButtonUp="OnOpenDoctorFromError"/>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-
-                <Grid Grid.Row="1" Margin="0,4,0,8">
+                <Grid Grid.Row="0" Margin="0,4,0,8">
+                    <StackPanel x:Name="ChartsToolbar" Orientation="Horizontal" Visibility="Collapsed">
+                        <Button x:Name="ChartsOpenFolderButton" Padding="10,4" Click="OnChartsOpenFolder" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="FolderOpen" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Open Folder" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ChartsNewButton" Padding="10,4" Click="OnChartsNew" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="Add" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="New" />
+                            </StackPanel>
+                        </Button>
+                        <Separator Margin="4,2" />
+                        <Button x:Name="ChartsSetValuesButton" Padding="10,4" Click="OnChartsSetValuesFile" Margin="4,0,8,0" IsEnabled="False"
+                                ToolTip="Associate a values.yaml with this chart. Stored alongside the chart and passed to Dekompose automatically.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="DocumentSettings" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Set values file" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ChartsSetDekomposeConfigButton" Padding="10,4" Click="OnChartsSetDekomposeConfig" Margin="0,0,8,0" IsEnabled="False"
+                                ToolTip="Associate a dekompose.yml with this chart. Stored alongside the chart and used as conversion rules when Dekomposing.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="DocumentEdit" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Set dekompose config" />
+                            </StackPanel>
+                        </Button>
+                        <Separator Margin="4,2" />
+                        <Button x:Name="ChartsDekomposeButton" Padding="10,4" Click="OnChartsDekompose" Margin="4,0,8,0" IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="Play" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Dekompose" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ChartsDeleteButton" Padding="10,4" Click="OnChartsDelete" IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Delete" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                     <StackPanel x:Name="DefinitionsToolbar" Orientation="Horizontal" Visibility="Collapsed">
                         <Button x:Name="ProjectsNewButton" Padding="10,4" Click="OnProjectsNew" Margin="0,0,8,0">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -250,10 +313,10 @@
                         </Button>
                     </StackPanel>
                     <StackPanel x:Name="ImagesToolbar" Orientation="Horizontal" Visibility="Collapsed">
-                        <Button x:Name="ImagesPullButton" Padding="10,4" Margin="0,0,8,0" Click="OnImagesPull" IsEnabled="False">
+                        <Button x:Name="ImagesPruneButton" Padding="10,4" Margin="0,0,8,0" Click="OnImagesPull">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="CloudArrowDown" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Pull" />
+                                <ic:FluentIcon Icon="LeafTwo" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Prune Unused" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="ImagesDeleteButton" Padding="10,4" Margin="0,0,8,0" Click="OnImagesDelete" IsEnabled="False">
@@ -276,7 +339,7 @@
                                 <TextBlock Text="Delete" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="VolumesPruneButton" Padding="10,4" Margin="0,0,8,0" Click="OnVolumesPrune" IsEnabled="False">
+                        <Button x:Name="VolumesPruneButton" Padding="10,4" Margin="0,0,8,0" Click="OnVolumesPrune">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="LeafTwo" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Prune" />
@@ -297,23 +360,39 @@
                     </StackPanel>
                 </Grid>
 
-                <Grid Grid.Row="2"
-                      x:Name="ContainersHeader"
-                      Visibility="{Binding ElementName=ContainersTree, Path=Visibility}"
-                      Margin="0,0,0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="40" />
-                                <ColumnDefinition Width="40" />
-                                <ColumnDefinition Width="170" />
-                                <ColumnDefinition Width="140" />
-                                <ColumnDefinition Width="120" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="2" Text="Container" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" />
-                            <TextBlock Grid.Column="3" Text="Image" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" />
-                            <TextBlock Grid.Column="4" Text="Ports" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" />
-                        </Grid>
+                <ListView Grid.Row="2"
+                          x:Name="ChartsList"
+                          Visibility="Collapsed"
+                          ItemsSource="{Binding Charts}"
+                          SelectionChanged="OnChartsSelectionChanged"
+                          SelectionMode="Single"
+                          Background="{DynamicResource ListBackground}"
+                          Foreground="{DynamicResource TextPrimary}"
+                          BorderBrush="{DynamicResource ListBorder}">
+                    <ListView.Resources>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListView.Resources>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Filename" DisplayMemberBinding="{Binding FileName}" Width="280" />
+                            <GridViewColumn Header="Size" DisplayMemberBinding="{Binding SizeDisplay}" Width="90" />
+                            <GridViewColumn Header="Modified" DisplayMemberBinding="{Binding Modified}" Width="150" />
+                            <GridViewColumn Header="Files" DisplayMemberBinding="{Binding AssociatedFilesLabel}" Width="120" />
+                            <GridViewColumn Header="Path" DisplayMemberBinding="{Binding FullPath}" Width="280" />
+                        </GridView>
+                    </ListView.View>
+                </ListView>
 
-                <Grid Grid.Row="3"
+                <Grid Grid.Row="2"
                       x:Name="ProjectsPanel"
                       Visibility="Collapsed">
                     <ListView x:Name="ProjectsListView"
@@ -346,7 +425,7 @@
                     </ListView>
                 </Grid>
 
-                        <ListView Grid.Row="3"
+                        <ListView Grid.Row="2"
                                   x:Name="DeploymentsList"
                                   Visibility="Collapsed"
                                   ItemsSource="{Binding Deployments}"
@@ -379,115 +458,114 @@
                             </ListView.View>
                         </ListView>
 
-                        <TreeView Grid.Row="3"
-                                  x:Name="ContainersTree"
+                        <ListView Grid.Row="2"
+                                  x:Name="ContainersList"
                                   Visibility="Visible"
-                                  ItemsSource="{Binding ContainerGroups}"
                                   Background="{DynamicResource PanelBackground}"
                                   Foreground="{DynamicResource TextPrimary}"
+                                  BorderThickness="0"
                                   MouseDoubleClick="OnContainerDoubleClick"
-                                  SelectedItemChanged="OnContainersSelectedItemChanged">
-                            <TreeView.ItemContainerStyle>
-                                <Style TargetType="TreeViewItem">
-                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
-                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                                  SelectionChanged="OnContainersSelectionChanged">
+                            <ListView.Resources>
+                                <Style TargetType="ListViewItem">
                                     <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                     <Style.Triggers>
                                         <Trigger Property="IsSelected" Value="True">
                                             <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
                                             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
                                         </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="{DynamicResource SidebarBackground}" />
-                                            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-                                        </Trigger>
                                     </Style.Triggers>
                                 </Style>
-                            </TreeView.ItemContainerStyle>
-                            <TreeView.Resources>
-                                <HierarchicalDataTemplate DataType="{x:Type local:ProjectGroupRow}"
-                                                          ItemsSource="{Binding Containers}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" />
-                                        <TextBlock Text="{Binding Containers.Count, StringFormat= ( {0} )}" Margin="6,0,0,0" Foreground="{DynamicResource TextPrimary}" />
-                                    </StackPanel>
-                                </HierarchicalDataTemplate>
-
-                                <DataTemplate DataType="{x:Type local:ContainerRow}">
-                                    <Grid Margin="0,2" VerticalAlignment="Center">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="40" />
-                                    <ColumnDefinition Width="40" />
-                                    <ColumnDefinition Width="120" />
-                                    <ColumnDefinition Width="170" />
-                                    <ColumnDefinition Width="140" />
-                                    <ColumnDefinition Width="120" />
-                                </Grid.ColumnDefinitions>
-
-                                <CheckBox Grid.Column="0"
-                                          IsChecked="{Binding IsSelected}"
-                                          HorizontalAlignment="Center"
-                                          Checked="OnContainerSelectionChanged"
-                                          Unchecked="OnContainerSelectionChanged" />
-
-                                <Image Grid.Column="1"
-                                       Width="16"
-                                       Height="16"
-                                       Margin="0,0,6,0"
-                                       Source="{Binding HostPlatform, Converter={StaticResource PlatformIconConverter}}" />
-
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse Width="12" Height="12" Margin="0,0,6,0">
-                                        <Ellipse.Style>
-                                            <Style TargetType="Ellipse">
-                                                <Setter Property="Fill" Value="{Binding State, Converter={StaticResource StatusBrushConverter}}" />
-                                                <Setter Property="Stroke" Value="Transparent" />
-                                                <Setter Property="StrokeThickness" Value="0" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ExitState}" Value="{x:Static local:ContainerExitState.ExitedSuccess}">
-                                                        <Setter Property="Fill" Value="Transparent" />
-                                                        <Setter Property="Stroke" Value="{StaticResource SuccessStrokeBrush}" />
-                                                        <Setter Property="StrokeThickness" Value="2" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Ellipse.Style>
-                                    </Ellipse>
-                                    <TextBlock Text="{Binding DisplayState}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                                </StackPanel>
-
-                                <TextBlock Grid.Column="3" Text="{Binding Id}" Foreground="{DynamicResource TextPrimary}" />
-                                <TextBlock Grid.Column="4" Text="{Binding Image}" Foreground="{DynamicResource TextPrimary}" />
-                                <TextBlock Grid.Column="5"
-                                           Text="{Binding Ports}"
-                                           MouseLeftButtonUp="OnContainerPortsClick">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
-                                                    <Setter Property="Cursor" Value="Hand" />
-                                                    <Setter Property="TextDecorations" Value="Underline" />
-                                                    <Style.Triggers>
-                                                        <Trigger Property="Text" Value="">
-                                                            <Setter Property="Cursor" Value="Arrow" />
-                                                            <Setter Property="TextDecorations" Value="{x:Null}" />
-                                                            <Setter Property="Opacity" Value="0.7" />
-                                                        </Trigger>
-                                                        <Trigger Property="Text" Value="{x:Null}">
-                                                            <Setter Property="Cursor" Value="Arrow" />
-                                                            <Setter Property="TextDecorations" Value="{x:Null}" />
-                                                            <Setter Property="Opacity" Value="0.7" />
-                                                        </Trigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Grid>
-                                </DataTemplate>
-                            </TreeView.Resources>
-                        </TreeView>
+                            </ListView.Resources>
+                            <ListView.ItemsSource>
+                                <Binding Source="{StaticResource ContainersView}" />
+                            </ListView.ItemsSource>
+                            <ListView.GroupStyle>
+                                <GroupStyle ContainerStyle="{StaticResource GroupedListGroupContainerStyle}" />
+                            </ListView.GroupStyle>
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Width="32">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsSelected}"
+                                                          HorizontalAlignment="Center"
+                                                          Checked="OnContainerSelectionChanged"
+                                                          Unchecked="OnContainerSelectionChanged" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Width="24">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Image Width="16" Height="16"
+                                                       Source="{Binding HostPlatform, Converter={StaticResource PlatformIconConverter}}" />
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Status" Width="110">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Ellipse Width="12" Height="12" Margin="0,0,6,0">
+                                                        <Ellipse.Style>
+                                                            <Style TargetType="Ellipse">
+                                                                <Setter Property="Fill" Value="{Binding EffectiveState, Converter={StaticResource StatusBrushConverter}}" />
+                                                                <Setter Property="Stroke" Value="Transparent" />
+                                                                <Setter Property="StrokeThickness" Value="0" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding ExitState}" Value="{x:Static local:ContainerExitState.ExitedSuccess}">
+                                                                        <Setter Property="Fill" Value="Transparent" />
+                                                                        <Setter Property="Stroke" Value="{StaticResource SuccessStrokeBrush}" />
+                                                                        <Setter Property="StrokeThickness" Value="2" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Ellipse.Style>
+                                                    </Ellipse>
+                                                    <TextBlock Text="{Binding DisplayState}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                    <GridViewColumn Header="Container" Width="200" DisplayMemberBinding="{Binding Id}" />
+                                    <GridViewColumn Header="Image" Width="200" DisplayMemberBinding="{Binding Image}" />
+                                    <GridViewColumn Header="Ports" Width="160">
+                                        <GridViewColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding Ports}"
+                                                           MouseLeftButtonUp="OnContainerPortsClick">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                                                            <Setter Property="Cursor" Value="Hand" />
+                                                            <Setter Property="TextDecorations" Value="Underline" />
+                                                            <Style.Triggers>
+                                                                <Trigger Property="Text" Value="">
+                                                                    <Setter Property="Cursor" Value="Arrow" />
+                                                                    <Setter Property="TextDecorations" Value="{x:Null}" />
+                                                                    <Setter Property="Opacity" Value="0.7" />
+                                                                </Trigger>
+                                                                <Trigger Property="Text" Value="{x:Null}">
+                                                                    <Setter Property="Cursor" Value="Arrow" />
+                                                                    <Setter Property="TextDecorations" Value="{x:Null}" />
+                                                                    <Setter Property="Opacity" Value="0.7" />
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </GridViewColumn.CellTemplate>
+                                    </GridViewColumn>
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
 
                         <TextBlock x:Name="PlaceholderText"
-                                   Grid.Row="3"
+                                   Grid.Row="2"
                                    VerticalAlignment="Center"
                                    HorizontalAlignment="Center"
                                    Foreground="{DynamicResource TextMuted}"
@@ -495,7 +573,7 @@
                                    Visibility="Collapsed"
                                    Text="Not implemented yet" />
 
-                        <ListView Grid.Row="3"
+                        <ListView Grid.Row="2"
                                   x:Name="ImagesList"
                                   Visibility="Collapsed"
                                   ItemsSource="{Binding Images}"
@@ -567,7 +645,7 @@
                             </ListView.View>
                         </ListView>
 
-                        <ListView Grid.Row="3"
+                        <ListView Grid.Row="2"
                                   x:Name="VolumesList"
                                   Visibility="Collapsed"
                                   ItemsSource="{Binding Volumes}"
@@ -636,6 +714,8 @@
                                 </GridView>
                             </ListView.View>
                         </ListView>
+
+                        <ui:LoadingOverlay x:Name="ViewLoadingOverlay" Grid.Row="2" Visibility="Collapsed" />
                     </Grid>
                 </Border>
 

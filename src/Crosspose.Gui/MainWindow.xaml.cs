@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -15,6 +16,9 @@ using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Orchestration;
 using Crosspose.Core.Deployment;
+using Crosspose.Doctor;
+using Crosspose.Doctor.Checks;
+using Crosspose.Ui;
 using Microsoft.Extensions.Logging;
 
 namespace Crosspose.Gui;
@@ -30,18 +34,40 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly ILogger _logger;
     private readonly DefinitionDeploymentService _deploymentService;
     private readonly DispatcherTimer _refreshTimer;
+    private readonly ProcessRunner _doctorRunner;
+    private DoctorMonitor? _doctorMonitor;
+    private readonly ConcurrentDictionary<string, bool> _checkResults = new();
     private bool _isRefreshing;
     private bool _pendingRefresh;
     private Task _refreshTask = Task.CompletedTask;
     private ProjectEntry? _selectedProjectEntry;
     private DeploymentRow? _selectedDeploymentRow;
+
+    // Doctor status indicator
+    private enum DoctorPollState { Unknown, Checking, Ready, NeedsAttention }
+    private DoctorPollState _doctorPollState = DoctorPollState.Unknown;
+    private string _doctorStatusTooltip = "Click to open Crosspose Doctor";
+    public string DoctorStatusLabel => _doctorPollState switch
+    {
+        DoctorPollState.Ready => "Ready",
+        DoctorPollState.NeedsAttention => "Needs Attention",
+        DoctorPollState.Checking => "Checking...",
+        _ => "Unknown"
+    };
+    public bool DoctorIsReady => _doctorPollState == DoctorPollState.Ready;
+    public bool DoctorIsNeedsAttention => _doctorPollState == DoctorPollState.NeedsAttention;
+    public string DoctorStatusTooltip => _doctorStatusTooltip;
+
     public ObservableCollection<ProjectGroupRow> ContainerGroups { get; } = new();
+    public ObservableCollection<ContainerRow> AllContainers { get; } = new();
     public ObservableCollection<ProjectEntry> Projects { get; } = new();
     public ObservableCollection<ImageRow> Images { get; } = new();
     public ObservableCollection<VolumeRow> Volumes { get; } = new();
     public ObservableCollection<DeploymentRow> Deployments { get; } = new();
-    public ObservableCollection<string> Errors { get; } = new();
+    public ObservableCollection<ChartFileRow> Charts { get; } = new();
     public string LogOutput => _logStore.ReadAll();
+
+
     private string _infoText = string.Empty;
     public string InfoText
     {
@@ -75,21 +101,256 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _composeOrchestrator = new ComposeOrchestrator(_dockerRunner, _podmanRunner, _loggerFactory);
         _deploymentService = new DefinitionDeploymentService();
 
+        // Separate silent runner for Doctor status checks — no output piped to the log store
+        _doctorRunner = new ProcessRunner(_loggerFactory.CreateLogger<ProcessRunner>());
+
         var intervalSeconds = GetRefreshIntervalSeconds();
         _refreshTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(intervalSeconds)
         };
         _refreshTimer.Tick += async (_, _) => await RefreshCurrentViewAsync();
+
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        SidebarRuntime.SelectedIndex = 0; // Projects default
-        await RefreshCurrentViewAsync();
+        await PreloadAllViewsAsync();
         _refreshTimer.Start();
         OnPropertyChanged(nameof(LogOutput));
-        InfoText = "View and manage cross-platform compose definitions that are ready for use.";
+        InfoText = "View and manage cross-platform compose bundles that are ready for use.";
+        StartDoctorMonitor();
+    }
+
+    /// <summary>
+    /// Navigates to the deepest view for which the user has data.
+    /// Called after Stage 1 of preloading, so collections are already populated.
+    /// Order: Charts → Compose Bundles → Projects → Containers (default).
+    /// </summary>
+    private void NavigateToSmartStartFromData()
+    {
+        if (Charts.Count == 0)      { SidebarSetup.SelectedIndex = 0; return; } // Charts
+        if (Projects.Count == 0)    { SidebarSetup.SelectedIndex = 1; return; } // Compose Bundles
+        if (Deployments.Count == 0) { SidebarRuntime.SelectedIndex = 0; return; } // Projects
+        SidebarRuntime.SelectedIndex = 1; // Containers
+    }
+
+    /// <summary>
+    /// Eagerly loads data for all views in the background so sidebar counts are populated
+    /// from startup without waiting for the user to click each view.
+    /// Stage 1 (awaited): fast filesystem data — Charts, Bundles, Projects.
+    /// Stage 2 (fire-and-forget): runtime data — Containers, Images, Volumes.
+    /// </summary>
+    private async Task PreloadAllViewsAsync()
+    {
+        var chartsTask = Task.Run(() =>
+        {
+            var dir = CrossposeEnvironment.HelmChartsDirectory;
+            Directory.CreateDirectory(dir);
+            return Directory.EnumerateFiles(dir, "*.tgz")
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .Select(f =>
+                {
+                    var info = new FileInfo(f);
+                    return new ChartFileRow
+                    {
+                        FileName = info.Name,
+                        FullPath = info.FullName,
+                        SizeDisplay = FormatFileSize(info.Length),
+                        Modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm"),
+                        ValuesFilePath = FindChartSiblingFile(info.FullName, ".values"),
+                        DekomposeConfigPath = FindChartSiblingFile(info.FullName, ".dekompose"),
+                    };
+                }).ToList();
+        });
+
+        var bundlesTask = Task.Run(() =>
+        {
+            var path = Path.GetFullPath(CrossposeEnvironment.OutputDirectory);
+            if (!Directory.Exists(path)) return new List<ProjectEntry>();
+            return Directory.GetFiles(path, "*.zip", SearchOption.TopDirectoryOnly)
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .Select(zip =>
+                {
+                    var fileName = Path.GetFileNameWithoutExtension(zip);
+                    var (projectName, versionName) = SplitProjectAndVersion(fileName);
+                    return new ProjectEntry
+                    {
+                        Name = projectName,
+                        Version = versionName,
+                        FullPath = zip,
+                        LastWriteTime = File.GetLastWriteTime(zip),
+                        FileCount = 1
+                    };
+                }).ToList();
+        });
+
+        var deploymentsTask = Task.Run(() =>
+            EnumerateDeploymentRows(CrossposeEnvironment.DeploymentDirectory));
+
+        await Task.WhenAll(chartsTask, bundlesTask, deploymentsTask);
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            Charts.Clear();
+            foreach (var r in chartsTask.Result) Charts.Add(r);
+            Projects.Clear();
+            foreach (var r in bundlesTask.Result) Projects.Add(r);
+            Deployments.Clear();
+            foreach (var r in deploymentsTask.Result) Deployments.Add(r);
+            UpdateSidebarCounts();
+            NavigateToSmartStartFromData();
+            _ = PreloadRuntimeDataAsync(GetCurrentView());
+        });
+    }
+
+    private async Task PreloadRuntimeDataAsync(string smartStartView)
+    {
+        // Skip containers if normal navigation already triggered its load
+        var tasks = new List<Task>();
+        if (smartStartView != "Containers") tasks.Add(PreloadContainersAsync());
+        tasks.Add(PreloadImagesAsync());
+        tasks.Add(PreloadVolumesAsync());
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task PreloadContainersAsync()
+    {
+        if (_isRefreshing) return;
+        _isRefreshing = true;
+        try
+        {
+            await RefreshContainersInternal();
+        }
+        finally
+        {
+            _isRefreshing = false;
+            if (_pendingRefresh)
+            {
+                _pendingRefresh = false;
+                _ = ShowContainersAsync();
+            }
+        }
+    }
+
+    private async Task PreloadImagesAsync()
+    {
+        List<ImageRow> newImages;
+        try
+        {
+            var detailTask = _combinedRunner.GetImagesDetailedAsync();
+            var rawTask = _combinedRunner.GetImagesAsync();
+            await Task.WhenAll(detailTask, rawTask);
+            if (rawTask.Result.HasError)
+                _logger.LogWarning("Image preload error: {Error}", rawTask.Result.Error);
+            newImages = detailTask.Result.Select(img => new ImageRow
+            {
+                HostPlatform = NormalizePlatformIcon(img.HostPlatform, img.Platform),
+                Platform = img.Platform,
+                Name = img.Name,
+                Tag = img.Tag,
+                Id = img.Id,
+                Size = img.Size,
+                State = "available"
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Image preload failed.");
+            return;
+        }
+        await Dispatcher.InvokeAsync(() =>
+        {
+            Images.Clear();
+            foreach (var i in newImages) Images.Add(i);
+            UpdateSidebarCounts();
+        });
+    }
+
+    private async Task PreloadVolumesAsync()
+    {
+        List<VolumeRow> newVolumes;
+        try
+        {
+            var detailTask = _combinedRunner.GetVolumesDetailedAsync();
+            var rawTask = _combinedRunner.GetVolumesAsync();
+            await Task.WhenAll(detailTask, rawTask);
+            if (rawTask.Result.HasError)
+                _logger.LogWarning("Volume preload error: {Error}", rawTask.Result.Error);
+            newVolumes = detailTask.Result.Select(vol => new VolumeRow
+            {
+                HostPlatform = NormalizePlatformIcon(vol.HostPlatform, vol.Platform),
+                Platform = vol.Platform,
+                Name = vol.Name,
+                Size = vol.Size,
+                State = "available"
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Volume preload failed.");
+            return;
+        }
+        await Dispatcher.InvokeAsync(() =>
+        {
+            Volumes.Clear();
+            foreach (var v in newVolumes) Volumes.Add(v);
+            UpdateSidebarCounts();
+        });
+    }
+
+    private void SetDoctorState(DoctorPollState state, string tooltip)
+    {
+        _doctorPollState = state;
+        _doctorStatusTooltip = tooltip;
+        OnPropertyChanged(nameof(DoctorStatusLabel));
+        OnPropertyChanged(nameof(DoctorIsReady));
+        OnPropertyChanged(nameof(DoctorIsNeedsAttention));
+        OnPropertyChanged(nameof(DoctorStatusTooltip));
+    }
+
+    private void StartDoctorMonitor()
+    {
+        _doctorMonitor?.Dispose();
+        _checkResults.Clear();
+        var settings = DoctorSettings.Load();
+        var checks = CheckCatalog.LoadAll(settings.AdditionalChecks, offlineMode: settings.OfflineMode);
+        _doctorMonitor = new DoctorMonitor(checks, _doctorRunner, _loggerFactory);
+        _doctorMonitor.CheckUpdated += OnDoctorCheckUpdated;
+        _doctorMonitor.AutoFixApplied += OnDoctorAutoFixApplied;
+        SetDoctorState(DoctorPollState.Checking, "Checking prerequisites...");
+        _doctorMonitor.Start();
+    }
+
+    private void OnDoctorCheckUpdated(ICheckFix check, CheckResult result)
+    {
+        _checkResults[check.Name] = result.IsSuccessful;
+        var failedNames = _checkResults.Where(kvp => !kvp.Value).Select(kvp => kvp.Key).ToList();
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (failedNames.Count == 0)
+                SetDoctorState(DoctorPollState.Ready, "All prerequisites met. Click to open Doctor.");
+            else
+            {
+                var summary = failedNames.Count == 1
+                    ? failedNames[0]
+                    : $"{failedNames[0]} (+{failedNames.Count - 1} more)";
+                SetDoctorState(DoctorPollState.NeedsAttention, $"Needs attention: {summary}. Click to open Doctor.");
+            }
+        });
+    }
+
+    private void OnDoctorAutoFixApplied(ICheckFix check, FixResult fix)
+    {
+        if (fix.Succeeded)
+            _logger.LogInformation("Doctor auto-fix succeeded for {Check}: {Message}", check.Name, fix.Message);
+        else
+            _logger.LogWarning("Doctor auto-fix failed for {Check}: {Message}", check.Name, fix.Message);
+    }
+
+    private void OnMainWindowClosing(object sender, System.ComponentModel.CancelEventArgs e)
+    {
+        _doctorMonitor?.Dispose();
     }
 
     private async Task ShowContainersAsync(bool force = false)
@@ -97,8 +358,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // ensure UI switches immediately even if a refresh is already running
         HideAllViews();
         ViewTitle.Text = "Containers";
-        ContainersHeader.Visibility = Visibility.Visible;
-        ContainersTree.Visibility = Visibility.Visible;
+        ContainersList.Visibility = Visibility.Visible;
         ContainersToolbar.Visibility = Visibility.Visible;
 
         if (_isRefreshing)
@@ -111,6 +371,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _isRefreshing = true;
+        var firstLoad = AllContainers.Count == 0;
+        if (firstLoad) ShowViewOverlay("Loading containers...");
         _refreshTask = RefreshContainersInternal();
         try
         {
@@ -118,6 +380,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         finally
         {
+            await Dispatcher.InvokeAsync(() => { if (firstLoad) HideViewOverlay(); });
             _isRefreshing = false;
             if (_pendingRefresh)
             {
@@ -133,7 +396,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         _logger.LogInformation("Refreshing containers view...");
         InfoText = "View and manage combined containers from Docker and Podman.";
-        var newErrors = new List<string>();
         var previouslySelectedContainers = GetSelectedContainerIds();
 
         var detailTask = _combinedRunner.GetContainersGroupedByProjectAsync(includeAll: true, cancellationToken: cts.Token);
@@ -145,18 +407,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (OperationCanceledException)
         {
-            var message = "Container refresh timed out after 15s.";
-            newErrors.Add(message);
-            _logger.LogWarning(message);
+            _logger.LogWarning("Container refresh timed out after 15s.");
             return;
         }
 
         var rawContainers = rawTask.Result;
         if (rawContainers.HasError)
         {
-            var containerError = FormatPlatformError("container refresh", rawContainers);
-            newErrors.Add(containerError);
-            _logger.LogWarning("Container enumeration error: {Error}", containerError);
+            _logger.LogWarning("Container enumeration error: {Error}", rawContainers.Error);
         }
 
         var groups = detailTask.Result;
@@ -184,6 +442,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Ports = container.Ports,
                 State = container.State,
                 Status = container.Status,
+                Health = container.Health,
                 Project = projectKey,
                 IsRunning = container.IsRunning,
                 ExitState = DetermineExitState(container),
@@ -250,23 +509,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var expansion = ContainerGroups.ToDictionary(p => p.Name, p => p.IsExpanded, StringComparer.OrdinalIgnoreCase);
             ContainerGroups.Clear();
+            AllContainers.Clear();
             foreach (var group in grouped)
             {
+                var displayName = string.IsNullOrWhiteSpace(group.Key) ? "(unassigned)" : group.Key;
                 var pg = new ProjectGroupRow
                 {
-                    Name = string.IsNullOrWhiteSpace(group.Key) ? "(unassigned)" : group.Key,
-                    IsExpanded = expansion.TryGetValue(string.IsNullOrWhiteSpace(group.Key) ? "(unassigned)" : group.Key, out var ex)
-                        ? ex
-                        : true
+                    Name = displayName,
+                    IsExpanded = expansion.TryGetValue(displayName, out var ex) ? ex : true
                 };
-                foreach (var row in group.Rows) pg.Containers.Add(row);
+                foreach (var row in group.Rows)
+                {
+                    pg.Containers.Add(row);
+                    AllContainers.Add(row);
+                }
                 ContainerGroups.Add(pg);
             }
 
-            Errors.Clear();
-            foreach (var err in newErrors) Errors.Add(err);
             OnPropertyChanged(nameof(LogOutput));
             UpdateContainerButtons();
+            UpdateSidebarCounts();
         });
 
         _isRefreshing = false;
@@ -279,7 +541,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var selection = GetCurrentView();
             switch (selection)
             {
-                case "Definitions":
+                case "Charts":
+                    await ShowChartsAsync();
+                    break;
+                case "Compose Bundles":
                     await ShowProjectsAsync();
                     break;
                 case "Projects":
@@ -302,8 +567,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to refresh view {View}", GetCurrentView());
-            Errors.Clear();
-            Errors.Add(ex.Message);
         }
     }
 
@@ -318,9 +581,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ImagesToolbar.Visibility = Visibility.Visible;
 
         _logger.LogInformation("Refreshing images view...");
-        var newErrors = new List<string>();
         var newImages = new List<ImageRow>();
         var previouslySelectedImages = GetSelectedImageKeys();
+        var firstLoad = Images.Count == 0;
+        if (firstLoad) ShowViewOverlay("Loading images...");
 
         var detailTask = _combinedRunner.GetImagesDetailedAsync();
         var rawTask = _combinedRunner.GetImagesAsync();
@@ -328,7 +592,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (rawTask.Result.HasError)
         {
-            newErrors.Add(FormatPlatformError("image refresh", rawTask.Result));
+            _logger.LogWarning("Image enumeration error: {Error}", rawTask.Result.Error);
         }
 
         foreach (var img in detailTask.Result)
@@ -352,10 +616,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Images.Clear();
             foreach (var i in newImages) Images.Add(i);
-
-            Errors.Clear();
-            foreach (var err in newErrors) Errors.Add(err);
             UpdateImageButtons();
+            UpdateSidebarCounts();
+            if (firstLoad) HideViewOverlay();
         });
 
         _isRefreshing = false;
@@ -372,9 +635,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         VolumesToolbar.Visibility = Visibility.Visible;
 
         _logger.LogInformation("Refreshing volumes view...");
-        var newErrors = new List<string>();
         var newVolumes = new List<VolumeRow>();
         var previouslySelectedVolumes = GetSelectedVolumeKeys();
+        var firstLoad = Volumes.Count == 0;
+        if (firstLoad) ShowViewOverlay("Loading volumes...");
 
         var detailTask = _combinedRunner.GetVolumesDetailedAsync();
         var rawTask = _combinedRunner.GetVolumesAsync();
@@ -382,7 +646,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (rawTask.Result.HasError)
         {
-            newErrors.Add(FormatPlatformError("volume refresh", rawTask.Result));
+            _logger.LogWarning("Volume enumeration error: {Error}", rawTask.Result.Error);
         }
 
         foreach (var vol in detailTask.Result)
@@ -404,10 +668,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Volumes.Clear();
             foreach (var v in newVolumes) Volumes.Add(v);
-
-            Errors.Clear();
-            foreach (var err in newErrors) Errors.Add(err);
             UpdateVolumeButtons();
+            UpdateSidebarCounts();
+            if (firstLoad) HideViewOverlay();
         });
 
         _isRefreshing = false;
@@ -417,13 +680,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         HideAllViews();
         ViewTitle.Text = "Projects";
-        InfoText = "View and manage cross-platform compose definitions that are ready for use.";
+        InfoText = "View and manage cross-platform compose bundles that are ready for use.";
         DeploymentsList.Visibility = Visibility.Visible;
         DeploymentsToolbar.Visibility = Visibility.Visible;
 
         var deploymentRoot = CrossposeEnvironment.DeploymentDirectory;
         Directory.CreateDirectory(deploymentRoot);
         var previouslySelectedPath = _selectedDeploymentRow?.FullPath;
+        if (Deployments.Count == 0) ShowViewOverlay("Loading projects...");
 
         try
         {
@@ -456,13 +720,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     DeploymentsList.SelectedItem = null;
                 }
                 UpdateDeploymentButtons();
+                UpdateSidebarCounts();
             });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to enumerate deployments in {Directory}", deploymentRoot);
-            Errors.Clear();
-            Errors.Add($"Unable to enumerate deployments: {ex.Message}");
+        }
+        finally
+        {
+            await Dispatcher.InvokeAsync(HideViewOverlay);
         }
     }
 
@@ -536,14 +803,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task ShowProjectsAsync()
     {
         HideAllViews();
-        ViewTitle.Text = "Definitions";
-        InfoText = "View and manage your saved cross-platform compose definitions.";
+        ViewTitle.Text = "Compose Bundles";
+        InfoText = "View and manage your saved compose bundles. Deploy a bundle to bring it up as a stack.";
         ProjectsPanel.Visibility = Visibility.Visible;
         DefinitionsToolbar.Visibility = Visibility.Visible;
         _logger.LogInformation("Refreshing projects view...");
 
         // Preserve selection across refreshes.
         var selectedPath = _selectedProjectEntry?.FullPath;
+        if (Projects.Count == 0) ShowViewOverlay("Loading compose bundles...");
 
         try
         {
@@ -596,15 +864,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _selectedProjectEntry = null;
             }
             UpdateProjectButtons();
-            _logger.LogInformation("Found {Count} compose definitions under {Path}", Projects.Count, path);
+            UpdateSidebarCounts();
+            _logger.LogInformation("Found {Count} compose bundles under {Path}", Projects.Count, path);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to enumerate compose project zip files.");
-            Errors.Clear();
-            Errors.Add(ex.Message);
-            _logStore.Write($"Definitions error: {ex.Message}");
+            _logStore.Write($"Compose bundles error: {ex.Message}");
             OnPropertyChanged(nameof(LogOutput));
+        }
+        finally
+        {
+            HideViewOverlay();
         }
     }
 
@@ -613,16 +884,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var source = !string.IsNullOrWhiteSpace(hostPlatform) ? hostPlatform : platform;
         if (string.IsNullOrWhiteSpace(source)) return "lin";
         return source.IndexOf("win", StringComparison.OrdinalIgnoreCase) >= 0 ? "win" : "lin";
-    }
-
-    private static string FormatPlatformError(string context, PlatformCommandResult result)
-    {
-        if (!string.IsNullOrWhiteSpace(result.Error))
-        {
-            return result.Error;
-        }
-
-        return $"The {context} request failed for {result.Platform} (exit {result.Result.ExitCode}). See Logs for details.";
     }
 
     private static List<string> CollectComposeFailures(ComposeExecutionResult result)
@@ -653,21 +914,200 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return $"{commandResult.Platform}: {error.Trim()}";
     }
 
+    private Task ShowChartsAsync()
+    {
+        HideAllViews();
+        ViewTitle.Text = "Helm Charts";
+        InfoText = "Manage downloaded Helm chart packages. Use 'New' to pull from a configured source, then 'Dekompose' to convert.";
+        ChartsList.Visibility = Visibility.Visible;
+        ChartsToolbar.Visibility = Visibility.Visible;
+
+        var dir = CrossposeEnvironment.HelmChartsDirectory;
+        Directory.CreateDirectory(dir);
+        Charts.Clear();
+        foreach (var file in Directory.EnumerateFiles(dir, "*.tgz").OrderByDescending(File.GetLastWriteTimeUtc))
+        {
+            var info = new FileInfo(file);
+            Charts.Add(new ChartFileRow
+            {
+                FileName = info.Name,
+                FullPath = info.FullName,
+                SizeDisplay = FormatFileSize(info.Length),
+                Modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm"),
+                ValuesFilePath = FindChartSiblingFile(info.FullName, ".values"),
+                DekomposeConfigPath = FindChartSiblingFile(info.FullName, ".dekompose"),
+            });
+        }
+        UpdateChartButtons();
+        UpdateSidebarCounts();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Returns the path of a sibling file named &lt;chartbase&gt;&lt;suffix&gt;.yaml/yml,
+    /// or null if neither extension exists.
+    /// Example: mychart-1.0.0.tgz + ".values" → mychart-1.0.0.values.yaml
+    /// </summary>
+    private static string? FindChartSiblingFile(string tgzPath, string suffix)
+    {
+        var dir = Path.GetDirectoryName(tgzPath)!;
+        var baseName = Path.GetFileNameWithoutExtension(tgzPath);
+        foreach (var ext in new[] { ".yaml", ".yml" })
+        {
+            var candidate = Path.Combine(dir, baseName + suffix + ext);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    private static string FormatFileSize(long bytes) =>
+        bytes switch
+        {
+            < 1024 => $"{bytes} B",
+            < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+            _ => $"{bytes / (1024.0 * 1024):F1} MB",
+        };
+
+    private void UpdateSidebarCounts()
+    {
+        static string Label(string name, int count) => count > 0 ? $"{name} ({count})" : name;
+
+        SidebarChartsItem.Content = Label("Helm Charts", Charts.Count);
+        SidebarBundlesItem.Content = Label("Compose Bundles", Projects.Count);
+        SidebarProjectsItem.Content = Label("Projects", Deployments.Count);
+        var containerCount = ContainerGroups.Sum(g => g.Containers.Count);
+        SidebarContainersItem.Content = Label("Containers", containerCount);
+        SidebarImagesItem.Content = Label("Images", Images.Count);
+        SidebarVolumesItem.Content = Label("Volumes", Volumes.Count);
+    }
+
+    private void UpdateChartButtons()
+    {
+        var hasSelection = ChartsList.SelectedItem is ChartFileRow;
+        ChartsDekomposeButton.IsEnabled = hasSelection;
+        ChartsDeleteButton.IsEnabled = hasSelection;
+        ChartsSetValuesButton.IsEnabled = hasSelection;
+        ChartsSetDekomposeConfigButton.IsEnabled = hasSelection;
+    }
+
+    private void OnChartsSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) =>
+        UpdateChartButtons();
+
+    private void OnChartsOpenFolder(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var folder = CrossposeEnvironment.HelmChartsDirectory;
+            Directory.CreateDirectory(folder);
+            Process.Start(new ProcessStartInfo { FileName = folder, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open Helm charts folder.");
+            MessageBox.Show(this, "Unable to open folder.\n\n" + ex.Message, "Crosspose", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void OnChartsNew(object sender, RoutedEventArgs e)
+    {
+        var window = new PickChartWindow { Owner = this };
+        if (window.ShowDialog() == true)
+            _ = ShowChartsAsync();
+    }
+
+    private void OnChartsDekompose(object sender, RoutedEventArgs e)
+    {
+        if (ChartsList.SelectedItem is not ChartFileRow row) return;
+        var path = ResolveDekomposeGuiPath();
+        var argList = new List<string> { "--chart", row.FullPath, "--compress", "--infra", "--remap-ports" };
+        if (row.ValuesFilePath is not null)
+        {
+            argList.Add("--values");
+            argList.Add(row.ValuesFilePath);
+        }
+        if (row.DekomposeConfigPath is not null)
+        {
+            argList.Add("--dekompose-config");
+            argList.Add(row.DekomposeConfigPath);
+        }
+        LaunchOrNotify(
+            "Crosspose Dekompose",
+            path ?? "crosspose.dekompose.gui",
+            useShell: path is null,
+            args: argList.ToArray());
+    }
+
+    private void OnChartsSetValuesFile(object sender, RoutedEventArgs e)
+    {
+        if (ChartsList.SelectedItem is not ChartFileRow row) return;
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select values file",
+            Filter = "YAML files|*.yaml;*.yml|All files|*.*"
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        var baseName = Path.GetFileNameWithoutExtension(row.FullPath);
+        var dest = Path.Combine(CrossposeEnvironment.HelmChartsDirectory, baseName + ".values.yaml");
+        File.Copy(dlg.FileName, dest, overwrite: true);
+        _ = ShowChartsAsync();
+    }
+
+    private void OnChartsSetDekomposeConfig(object sender, RoutedEventArgs e)
+    {
+        if (ChartsList.SelectedItem is not ChartFileRow row) return;
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select dekompose config",
+            Filter = "Dekompose YAML|*.dekompose.yml;*.dekompose.yaml;*.yml;*.yaml|All files|*.*"
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        var baseName = Path.GetFileNameWithoutExtension(row.FullPath);
+        var dest = Path.Combine(CrossposeEnvironment.HelmChartsDirectory, baseName + ".dekompose.yml");
+        File.Copy(dlg.FileName, dest, overwrite: true);
+        _ = ShowChartsAsync();
+    }
+
+    private void OnChartsDelete(object sender, RoutedEventArgs e)
+    {
+        if (ChartsList.SelectedItem is not ChartFileRow row) return;
+        if (MessageBox.Show($"Delete {row.FileName}?", "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        try
+        {
+            File.Delete(row.FullPath);
+            _ = ShowChartsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete chart {Path}", row.FullPath);
+        }
+    }
+
     private void HideAllViews()
     {
-        ContainersHeader.Visibility = Visibility.Collapsed;
-        ContainersTree.Visibility = Visibility.Collapsed;
+        ContainersList.Visibility = Visibility.Collapsed;
         ImagesList.Visibility = Visibility.Collapsed;
         VolumesList.Visibility = Visibility.Collapsed;
         ProjectsPanel.Visibility = Visibility.Collapsed;
         DeploymentsList.Visibility = Visibility.Collapsed;
+        ChartsList.Visibility = Visibility.Collapsed;
         PlaceholderText.Visibility = Visibility.Collapsed;
+        ChartsToolbar.Visibility = Visibility.Collapsed;
         DefinitionsToolbar.Visibility = Visibility.Collapsed;
         DeploymentsToolbar.Visibility = Visibility.Collapsed;
         ContainersToolbar.Visibility = Visibility.Collapsed;
         ImagesToolbar.Visibility = Visibility.Collapsed;
         VolumesToolbar.Visibility = Visibility.Collapsed;
+        HideViewOverlay();
     }
+
+    private void ShowViewOverlay(string message)
+    {
+        ViewLoadingOverlay.Message = message;
+        ViewLoadingOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void HideViewOverlay() =>
+        ViewLoadingOverlay.Visibility = Visibility.Collapsed;
 
     private List<ContainerRow> GetSelectedContainerRows() =>
         ContainerGroups.SelectMany(g => g.Containers).Where(c => c.IsSelected).ToList();
@@ -735,7 +1175,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void UpdateImageButtons()
     {
         var hasSelection = Images.Any(i => i.IsSelected);
-        ImagesPullButton.IsEnabled = hasSelection;
+        ImagesPruneButton.IsEnabled = true;
         ImagesDeleteButton.IsEnabled = hasSelection;
     }
 
@@ -743,14 +1183,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var hasSelection = Volumes.Any(v => v.IsSelected);
         VolumesDeleteButton.IsEnabled = hasSelection;
-        VolumesPruneButton.IsEnabled = hasSelection;
+        VolumesPruneButton.IsEnabled = true;
         VolumesInspectButton.IsEnabled = hasSelection;
     }
 
     private string GetCurrentView()
     {
-        if (SidebarSetup.SelectedItem is ListBoxItem si && si.IsSelected) return si.Content?.ToString() ?? string.Empty;
-        if (SidebarRuntime.SelectedItem is ListBoxItem ri && ri.IsSelected) return ri.Content?.ToString() ?? string.Empty;
+        if (SidebarSetup.SelectedItem is ListBoxItem si && si.IsSelected) return si.Tag?.ToString() ?? string.Empty;
+        if (SidebarRuntime.SelectedItem is ListBoxItem ri && ri.IsSelected) return ri.Tag?.ToString() ?? string.Empty;
         return string.Empty;
     }
 
@@ -760,7 +1200,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ViewTitle.Text = viewName;
         InfoText = viewName switch
         {
-            "Definitions" => "Manage saved compose project outputs.",
+            "Compose Bundles" => "Manage saved compose bundles ready for deployment.",
             "Projects" => "Review and deploy compose outputs.",
             "Volumes" => "View and manage combined container volumes from Docker and Podman..",
             "Images" => "View and manage combined container images from Docker and Podman.",
@@ -891,7 +1331,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnProjectsNew(object sender, RoutedEventArgs e)
     {
-        _logger.LogInformation("Launching Crosspose Dekompose from Definitions view.");
+        _logger.LogInformation("Launching Crosspose Dekompose from Compose Bundles view.");
         OnDekomposeClick(sender, e);
     }
 
@@ -925,12 +1365,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var folder = CrossposeEnvironment.OutputDirectory;
             Directory.CreateDirectory(folder);
-            _logger.LogInformation("Opening definitions folder {Folder}", folder);
+            _logger.LogInformation("Opening compose bundles folder {Folder}", folder);
             Process.Start("explorer.exe", $"\"{folder}\"");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to open definitions folder {Folder}", CrossposeEnvironment.OutputDirectory);
+            _logger.LogError(ex, "Failed to open compose bundles folder {Folder}", CrossposeEnvironment.OutputDirectory);
             MessageBox.Show(this, "Unable to open folder.\n\n" + ex.Message, "Crosspose", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -958,6 +1398,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var result = await _composeOrchestrator.ExecuteAsync(request);
             AppendComposeLog(result);
+
+            if (result.PortProxyFixRequired)
+            {
+                LaunchDoctorElevatedForAutoFix();
+            }
 
             var failures = CollectComposeFailures(result);
             if (failures.Count > 0)
@@ -1223,21 +1668,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var row = GetSelectedContainerRows().FirstOrDefault();
         if (row is null) return;
-        var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore) { Owner = this };
+        var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore, _combinedRunner) { Owner = this };
         details.Show();
     }
 
     private void OnContainerSelectionChanged(object? sender, RoutedEventArgs e) => UpdateContainerButtons();
-    private void OnContainersSelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+    private void OnContainersSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ContainersTree.SelectedItem is ContainerRow row)
+        if (ContainersList.SelectedItem is ContainerRow row)
         {
             if (!row.IsSelected)
             {
                 row.IsSelected = true;
             }
-            UpdateContainerButtons();
         }
+        UpdateContainerButtons();
     }
     private void OnImageSelectionChanged(object? sender, RoutedEventArgs e) => UpdateImageButtons();
     private void OnVolumeSelectionChanged(object? sender, RoutedEventArgs e) => UpdateVolumeButtons();
@@ -1321,8 +1766,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await RefreshCurrentViewAsync(true);
     }
 
-    private void OnImagesPull(object sender, RoutedEventArgs e) => NotifyNotImplemented("Image pull");
-    private void OnVolumesPrune(object sender, RoutedEventArgs e) => NotifyNotImplemented("Volume prune");
+    private async void OnImagesPull(object sender, RoutedEventArgs e)
+    {
+        var confirm = MessageBox.Show(
+            this,
+            "This will remove all images not referenced by any container (across Docker and Podman).\n\nContinue?",
+            "Prune Unused Images",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirm != MessageBoxResult.Yes) return;
+
+        try
+        {
+            var ok = await _combinedRunner.PruneImagesAsync();
+            if (!ok)
+            {
+                MessageBox.Show(this, "One or more platforms reported an error while pruning images.", "Crosspose", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to prune images");
+            MessageBox.Show(this, $"Failed to prune images: {ex.Message}", "Crosspose", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+
+        await RefreshCurrentViewAsync(true);
+    }
+
+    private async void OnVolumesPrune(object sender, RoutedEventArgs e)
+    {
+        var confirm = MessageBox.Show(
+            this,
+            "This will remove all volumes not referenced by any container (across Docker and Podman).\n\nContinue?",
+            "Prune Unused Volumes",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirm != MessageBoxResult.Yes) return;
+
+        try
+        {
+            var ok = await _combinedRunner.PruneVolumesAsync();
+            if (!ok)
+            {
+                MessageBox.Show(this, "One or more platforms reported an error while pruning volumes.", "Crosspose", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to prune volumes");
+            MessageBox.Show(this, $"Failed to prune volumes: {ex.Message}", "Crosspose", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+
+        await RefreshCurrentViewAsync(true);
+    }
     private void OnVolumesInspect(object sender, RoutedEventArgs e) => NotifyNotImplemented("Volume inspect");
 
     private void NotifyNotImplemented(string capability)
@@ -1350,11 +1848,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var request = new ComposeExecutionRequest(
                 SourcePath: row.FullPath,
                 Action: action,
-                Detached: action == ComposeAction.Up,
-                ProjectName: row.Project);
+                Detached: action == ComposeAction.Up);
 
             executionResult = await _composeOrchestrator.ExecuteAsync(request);
             AppendComposeLog(executionResult);
+
+            if (action == ComposeAction.Up && executionResult.PortProxyFixRequired)
+            {
+                LaunchDoctorElevatedForAutoFix();
+            }
 
             var label = $"{action.ToCommand()} @ {DateTime.Now:t}";
             row.LastAction = label;
@@ -1382,6 +1884,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 MessageBox.Show(this, message, "Crosspose", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        await RefreshCurrentViewAsync(true);
     }
 
     private Task RunDeploymentActionAsync(ComposeAction action)
@@ -1525,12 +2029,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private void OnPodmanDesktopClick(object sender, RoutedEventArgs e) =>
-        LaunchOrNotify("Podman Desktop", "podman-desktop");
+        MessageBox.Show(
+            "Podman Desktop is not supported in Crosspose.\n\n" +
+            "Podman for Windows cannot connect to a remote backend (such as the Podman machine running in WSL), " +
+            "so Windows-side container management is not possible through Podman Desktop.\n\n" +
+            "Crosspose drives Podman directly inside WSL instead.",
+            "Podman Desktop — Not Supported",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
 
     private void OnLogViewClick(object sender, RoutedEventArgs e)
     {
         var logWindow = new LogWindow(_logStore) { Owner = this };
         logWindow.Show();
+    }
+
+    public string ThemeMenuHeader => App.IsDarkMode ? "Enable _Light Mode" : "Enable _Dark Mode";
+
+    private void OnToggleThemeClick(object sender, RoutedEventArgs e)
+    {
+        App.ToggleTheme();
+        OnPropertyChanged(nameof(ThemeMenuHeader));
     }
 
     private void OnAboutClick(object sender, RoutedEventArgs e)
@@ -1548,8 +2067,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         about.ShowDialog();
     }
 
-    private void OnOpenDoctorFromError(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
-        OnDoctorClick(sender, e);
+    public Visibility PortableModeMenuVisibility =>
+        AppDataLocator.IsPortableMode ? Visibility.Collapsed : Visibility.Visible;
+
+    private void OnOpenConfigDirectoryClick(object sender, RoutedEventArgs e)
+    {
+        var path = AppDataLocator.AppDataPath;
+        Directory.CreateDirectory(path);
+        Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+    }
+
+    private void OnEnablePortableModeClick(object sender, RoutedEventArgs e)
+    {
+        var window = new PortableModeWindow { Owner = this };
+        window.ShowDialog();
+    }
+
+    public string OfflineModeMenuHeader =>
+        DoctorSettings.IsOfflineMode ? "Disable _Offline Mode" : "Enable _Offline Mode";
+
+    private void OnToggleOfflineModeClick(object sender, RoutedEventArgs e)
+    {
+        var enabling = !DoctorSettings.IsOfflineMode;
+        DoctorSettings.SetOfflineMode(enabling);
+        OnPropertyChanged(nameof(OfflineModeMenuHeader));
+        StartDoctorMonitor();
+    }
+
+
 
     private void LaunchOrNotify(string friendlyName, string processName, bool useShell = true, IEnumerable<string>? args = null)
     {
@@ -1604,6 +2149,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (File.Exists(local)) return local;
         _logger.LogWarning("Crosspose.Doctor.Gui.exe not found in output folder; falling back to PATH.");
         return null;
+    }
+
+    /// <summary>
+    /// Launches Doctor.Gui as Administrator with --auto-fix so it silently applies
+    /// portproxy rules and firewall entries, then closes. Called after 'up' when the
+    /// current process is not elevated.
+    /// </summary>
+    private void LaunchDoctorElevatedForAutoFix()
+    {
+        var path = ResolveDoctorGuiPath() ?? "Crosspose.Doctor.Gui.exe";
+        _logger.LogInformation("Requesting elevated Doctor launch for portproxy auto-fix.");
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = path,
+                Arguments = "--auto-fix",
+                UseShellExecute = true,
+                Verb = "runas",
+                WorkingDirectory = Path.GetDirectoryName(path) ?? AppContext.BaseDirectory
+            };
+            Process.Start(psi);
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // User cancelled UAC prompt — silently ignore; they can run Doctor manually
+            _logger.LogInformation("UAC prompt cancelled by user — portproxy rules were not applied.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to launch elevated Doctor for auto-fix.");
+        }
     }
 
     private string? ResolveDekomposeGuiPath()
@@ -1663,9 +2240,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnContainerDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (ContainersTree.SelectedItem is ContainerRow row)
+        if (ContainersList.SelectedItem is ContainerRow row)
         {
-            var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore) { Owner = this };
+            var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore, _combinedRunner) { Owner = this };
             details.Show();
             e.Handled = true;
         }
@@ -1702,11 +2279,36 @@ public class ContainerRow : INotifyPropertyChanged
                 {
                     _state = value;
                     OnPropertyChanged(nameof(State));
+                    OnPropertyChanged(nameof(EffectiveState));
                     UpdateDisplayState();
                 }
             }
         }
         public string Status { get; set; } = string.Empty;
+        private string? _health;
+        public string? Health
+        {
+            get => _health;
+            set
+            {
+                if (_health != value)
+                {
+                    _health = value;
+                    OnPropertyChanged(nameof(Health));
+                    OnPropertyChanged(nameof(EffectiveState));
+                    UpdateDisplayState();
+                }
+            }
+        }
+        /// <summary>
+        /// State value used for the status indicator. Returns "unhealthy" when the container is
+        /// running but its healthcheck reports failure, so the converter can show amber instead of green.
+        /// </summary>
+        public string EffectiveState =>
+            string.Equals(_state, "running", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(_health, "unhealthy", StringComparison.OrdinalIgnoreCase)
+                ? "unhealthy"
+                : _state;
         private ContainerExitState _exitState = ContainerExitState.Unknown;
         public ContainerExitState ExitState
         {
@@ -1722,6 +2324,7 @@ public class ContainerRow : INotifyPropertyChanged
             }
         }
         public string Project { get; set; } = string.Empty;
+        public string ProjectDisplay => string.IsNullOrWhiteSpace(Project) ? "(unassigned)" : Project;
         private string _displayState = "Unknown";
         public string DisplayState
         {
@@ -1747,6 +2350,14 @@ public class ContainerRow : INotifyPropertyChanged
             if (ExitState == ContainerExitState.ExitedSuccess)
             {
                 DisplayState = "exited";
+                return;
+            }
+
+            if (string.Equals(_state, "running", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(_health) &&
+                !string.Equals(_health, "healthy", StringComparison.OrdinalIgnoreCase))
+            {
+                DisplayState = _health; // "unhealthy" or "starting"
                 return;
             }
 
@@ -1911,4 +2522,24 @@ public class DeploymentRow : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+public sealed class ChartFileRow
+{
+    public string FileName { get; set; } = string.Empty;
+    public string FullPath { get; set; } = string.Empty;
+    public string SizeDisplay { get; set; } = string.Empty;
+    public string Modified { get; set; } = string.Empty;
+    public string? ValuesFilePath { get; set; }
+    public string? DekomposeConfigPath { get; set; }
+    public string AssociatedFilesLabel
+    {
+        get
+        {
+            var parts = new List<string>(2);
+            if (ValuesFilePath is not null) parts.Add("values");
+            if (DekomposeConfigPath is not null) parts.Add("dekompose");
+            return string.Join(", ", parts);
+        }
+    }
 }

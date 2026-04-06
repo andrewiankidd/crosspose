@@ -485,3 +485,9 @@ $RECYCLE.BIN/
 
 # Crosspose generated artifacts
 .tmp-*
+
+# Claude
+.claude/
+
+# Local scripts (workload-specific, never committed)
+scripts/

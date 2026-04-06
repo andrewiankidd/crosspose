@@ -28,6 +28,9 @@ public static class CrossposeEnvironment
         }
     }
 
+    public static string HelmChartsDirectory =>
+        AppDataLocator.GetPreferredDirectory("helm-charts");
+
     public static string DeploymentDirectory
     {
         get

@@ -23,6 +23,7 @@ public sealed class ComposeGenerator
     private readonly ILogger<ComposeGenerator> _logger;
     private readonly Random _rand = new();
     private readonly HashSet<int> _usedPorts = new();
+    private readonly HashSet<int> _usedInfraPorts = new();
     private readonly HashSet<string> _windowsServiceNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _linuxServiceNames = new(StringComparer.OrdinalIgnoreCase);
     private readonly ISerializer _serializer = new SerializerBuilder()
@@ -56,7 +57,46 @@ public sealed class ComposeGenerator
         var unconverted = new List<UnconvertedRecord>();
         var byWorkload = new Dictionary<string, Dictionary<string, List<ComposeService>>>(StringComparer.OrdinalIgnoreCase);
 
-        var runtimeContext = RuleRuntimeContext.Build(ruleSets, _logger);
+        var configMaps = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var doc in documents)
+        {
+            if (!string.Equals(GetString(doc, "kind"), "ConfigMap", StringComparison.OrdinalIgnoreCase)) continue;
+            var cmName = GetString(doc, "metadata", "name");
+            if (string.IsNullOrWhiteSpace(cmName)) continue;
+            var data = GetMap(doc, "data");
+            if (data is null) continue;
+            var entries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in data)
+                if (kv.Value is string val) entries[kv.Key] = val;
+            configMaps[cmName] = entries;
+        }
+
+        var runtimeContext = RuleRuntimeContext.Build(ruleSets, _logger, GetNextInfraHostPort);
+
+        // Pre-pass 1: register all Service ports (needed by later passes).
+        // Pre-pass 2: classify each workload's OS — must run before VirtualService pass so aliases inherit the right OS.
+        // Pre-pass 3: register VirtualService host aliases (needs ports + OS already populated).
+        foreach (var doc in documents)
+        {
+            if (string.Equals(GetString(doc, "kind"), "Service", StringComparison.OrdinalIgnoreCase))
+                RegisterServicePorts(doc, servicePortMap);
+        }
+        foreach (var doc in documents)
+        {
+            var kind = GetString(doc, "kind");
+            if (!string.Equals(kind, "Deployment", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kind, "Job", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kind, "Rollout", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kind, "StatefulSet", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(kind, "DaemonSet", StringComparison.OrdinalIgnoreCase))
+                continue;
+            RegisterWorkloadOs(doc, runtimeContext);
+        }
+        foreach (var doc in documents)
+        {
+            if (string.Equals(GetString(doc, "kind"), "VirtualService", StringComparison.OrdinalIgnoreCase))
+                RegisterVirtualServiceAliases(doc, servicePortMap);
+        }
 
         foreach (var doc in documents)
         {
@@ -73,12 +113,18 @@ public sealed class ComposeGenerator
             switch (kind)
             {
                 case "Service":
-                    RegisterServicePorts(doc, servicePortMap);
+                case "VirtualService":
+                    break; // already handled in pre-passes above
+
+                case "ConfigMap":
                     break;
 
                 case "Deployment":
                 case "Job":
-                    var services = ConvertWorkload(doc, kind, servicePortMap, runtimeContext, remapServicePorts, includeInfra, outputDirectory);
+                case "Rollout":
+                case "StatefulSet":
+                case "DaemonSet":
+                    var services = ConvertWorkload(doc, kind, servicePortMap, runtimeContext, remapServicePorts, includeInfra, outputDirectory, configMaps);
                     if (services.Count == 0)
                     {
                         unconverted.Add(new UnconvertedRecord(name, kind, "No containers found"));
@@ -128,7 +174,7 @@ public sealed class ComposeGenerator
                     }
                 }
                 var composePath = Path.Combine(outputDirectory, $"docker-compose.{workload}.{os}.yml");
-                var yaml = BuildComposeYaml(osKvp.Value, networkName);
+                var yaml = BuildComposeYaml(osKvp.Value, networkName, osIsWindows, runtimeContext.InfraWithHealthcheck);
                 await File.WriteAllTextAsync(composePath, yaml, cancellationToken);
                 _logger.LogInformation("Wrote {Path} with {Count} services", composePath, osKvp.Value.Count);
             }
@@ -154,8 +200,8 @@ public sealed class ComposeGenerator
         if (portProxyRequirements.Count > 0)
         {
             report["portProxyRequirements"] = portProxyRequirements
-                .OrderBy(p => p)
-                .Select(p => new { port = p, network = networkName })
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => new { port = kvp.Key, connectPort = kvp.Value, network = networkName })
                 .ToList();
         }
 
@@ -164,6 +210,60 @@ public sealed class ComposeGenerator
     }
 
 
+        private static string DetectOs(Dictionary<string, object?> templateSpec, string workload, RuleRuntimeContext runtimeContext)
+        {
+            // 1. Explicit rule-set override wins (use when chart doesn't set correct nodeSelector)
+            if (runtimeContext.IsWindowsWorkload(workload))
+                return "windows";
+
+            // 2. Standard nodeSelector key
+            var nodeOs = GetString(templateSpec, "nodeSelector", "kubernetes.io/os");
+            if (!string.IsNullOrWhiteSpace(nodeOs))
+                return nodeOs.ToLowerInvariant();
+
+            // 3. Deprecated beta label
+            var betaOs = GetString(templateSpec, "nodeSelector", "beta.kubernetes.io/os");
+            if (!string.IsNullOrWhiteSpace(betaOs))
+                return betaOs.ToLowerInvariant();
+
+            // 4. nodeAffinity required rules — look for kubernetes.io/os: windows
+            if (IsWindowsFromNodeAffinity(templateSpec))
+                return "windows";
+
+            return "linux";
+        }
+
+        private static bool IsWindowsFromNodeAffinity(Dictionary<string, object?> templateSpec)
+        {
+            if (!templateSpec.TryGetValue("affinity", out var affinityObj) || affinityObj is not Dictionary<string, object?> affinity)
+                return false;
+            if (!affinity.TryGetValue("nodeAffinity", out var naObj) || naObj is not Dictionary<string, object?> nodeAffinity)
+                return false;
+            if (!nodeAffinity.TryGetValue("requiredDuringSchedulingIgnoredDuringExecution", out var reqObj) || reqObj is not Dictionary<string, object?> required)
+                return false;
+            if (!required.TryGetValue("nodeSelectorTerms", out var termsObj) || termsObj is not List<object?> terms)
+                return false;
+
+            foreach (var termObj in terms)
+            {
+                if (termObj is not Dictionary<string, object?> term) continue;
+                if (!term.TryGetValue("matchExpressions", out var exprsObj) || exprsObj is not List<object?> exprs) continue;
+                foreach (var exprObj in exprs)
+                {
+                    if (exprObj is not Dictionary<string, object?> expr) continue;
+                    var key = GetString(expr, "key");
+                    if (!string.Equals(key, "kubernetes.io/os", StringComparison.OrdinalIgnoreCase)) continue;
+                    var op = GetString(expr, "operator");
+                    if (!string.Equals(op, "In", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!expr.TryGetValue("values", out var valsObj) || valsObj is not List<object?> vals) continue;
+                    if (vals.Any(v => string.Equals(v?.ToString(), "windows", StringComparison.OrdinalIgnoreCase)))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
         private List<ComposeService> ConvertWorkload(
             Dictionary<string, object?> doc,
             string kind,
@@ -171,7 +271,8 @@ public sealed class ComposeGenerator
             RuleRuntimeContext runtimeContext,
             bool remapServicePorts,
             bool includeInfra,
-            string outputDirectory)
+            string outputDirectory,
+            Dictionary<string, Dictionary<string, string>> configMaps)
         {
             var list = new List<ComposeService>();
             var name = GetString(doc, "metadata", "name") ?? "workload";
@@ -180,8 +281,11 @@ public sealed class ComposeGenerator
         var template = GetMap(doc, "spec", "template", "spec");
         if (template is null) return list;
 
-        var os = GetString(template, "nodeSelector", "kubernetes.io/os") ?? "linux";
+        var os = DetectOs(template, workload, runtimeContext);
         var volumes = ExtractVolumeDefinitions(template);
+
+        var isCrossposeWorkload = string.Equals(workload, "crosspose", StringComparison.OrdinalIgnoreCase);
+        var serviceWorkloadKey = isCrossposeWorkload ? "jobs" : workload;
 
         var containers = GetSequence(template, "containers");
         if (containers is null) return list;
@@ -190,8 +294,6 @@ public sealed class ComposeGenerator
         {
             if (item is not Dictionary<string, object?> container) continue;
             var containerName = GetString(container, "name") ?? name;
-            var isCrossposeWorkload = string.Equals(workload, "crosspose", StringComparison.OrdinalIgnoreCase);
-            var serviceWorkloadKey = isCrossposeWorkload ? "jobs" : workload;
             var svcName = BuildServiceName(serviceWorkloadKey, containerName, isCrossposeWorkload);
             var image = GetString(container, "image") ?? "unknown";
 
@@ -205,19 +307,27 @@ public sealed class ComposeGenerator
                     var containerPort = GetInt(portMap, "containerPort");
                     if (containerPort.HasValue)
                     {
-                        var hostPort = GetNextHostPort();
+                        // Reuse the host port already reserved by RegisterServicePorts so that
+                        // the compose port, the servicePortMap, and any VirtualService aliases all
+                        // agree on the same host port for this service.
+                        // Priority: existing svcName entry (K8s Service "erp-api") →
+                        //           workload-level entry (K8s Service "erp") → allocate new.
+                        int hostPort;
+                        if (servicePortMap.TryGetValue(svcName, out var existingPort))
+                            hostPort = existingPort;
+                        else if (servicePortMap.TryGetValue(serviceWorkloadKey, out var workloadPort))
+                            hostPort = workloadPort;
+                        else
+                            hostPort = GetNextHostPort();
                         ports.Add($"{hostPort}:{containerPort.Value}");
-                        if (!servicePortMap.ContainsKey(svcName))
-                        {
-                            servicePortMap[svcName] = hostPort;
-                        }
+                        servicePortMap[svcName] = hostPort;
+                        // Keep the workload-level entry in sync so VirtualService aliases resolve correctly.
+                        servicePortMap[serviceWorkloadKey] = hostPort;
                     }
                 }
             }
 
             var (env, infraDependencies) = BuildEnvironment(container, servicePortMap, runtimeContext, remapServicePorts, includeInfra, os);
-            var volumeMounts = BuildVolumes(container, volumes, runtimeContext, outputDirectory, os);
-
             var service = new ComposeService
             {
                 Name = svcName,
@@ -226,22 +336,65 @@ public sealed class ComposeGenerator
                 Image = image,
                 Ports = ports,
                 Environment = env,
-                Volumes = volumeMounts,
-                Restart = "on-failure"
+                Restart = "on-failure",
+                IsJob = string.Equals(kind, "Job", StringComparison.OrdinalIgnoreCase),
+                Healthcheck = TranslateProbe(GetMap(container, "livenessProbe") ?? GetMap(container, "readinessProbe"), os)
             };
+            var volumeMounts = BuildVolumes(container, volumes, runtimeContext, outputDirectory, os, configMaps, servicePortMap, remapServicePorts, service.NamedVolumeRefs, serviceWorkloadKey);
+            service.Volumes.AddRange(volumeMounts);
             if (string.Equals(os, "windows", StringComparison.OrdinalIgnoreCase))
-            {
                 _windowsServiceNames.Add(service.Name);
-            }
             else
-            {
                 _linuxServiceNames.Add(service.Name);
-            }
             foreach (var infra in infraDependencies)
-            {
                 service.DependsOn.Add(infra);
-            }
             list.Add(service);
+        }
+
+        // Process initContainers — emit as run-once services that the main containers depend on.
+        var initContainers = GetSequence(template, "initContainers");
+        if (initContainers is not null)
+        {
+            foreach (var item in initContainers)
+            {
+                if (item is not Dictionary<string, object?> container) continue;
+                var containerName = GetString(container, "name") ?? "init";
+                var svcName = BuildServiceName(serviceWorkloadKey, containerName, false);
+                var image = GetString(container, "image") ?? "unknown";
+
+                // Extract command and args so the init container runs its intended entrypoint,
+                // not the image's default CMD (e.g. the cp to populate the shared volume).
+                var cmdSeq = GetSequence(container, "command");
+                var argsSeq = GetSequence(container, "args");
+                var command = cmdSeq?.OfType<string>().ToList();
+                List<string>? args = null;
+                if (argsSeq is not null)
+                {
+                    // K8s args may be a sequence of strings or a multi-line scalar joined into one element.
+                    var rawArgs = argsSeq.OfType<string>().ToList();
+                    args = rawArgs.Count > 0 ? rawArgs : null;
+                }
+
+                var initService = new ComposeService
+                {
+                    Name = svcName,
+                    Workload = serviceWorkloadKey,
+                    Os = os,
+                    Image = image,
+                    Restart = null, // omit restart key — "no" serialises to YAML bool false which podman rejects
+                    IsJob = true,
+                    IsInitContainer = true,
+                    Command = command,
+                    Args = args
+                };
+                var volumeMounts = BuildVolumes(container, volumes, runtimeContext, outputDirectory, os, configMaps, servicePortMap, remapServicePorts, initService.NamedVolumeRefs, serviceWorkloadKey);
+                initService.Volumes.AddRange(volumeMounts);
+                if (string.Equals(os, "windows", StringComparison.OrdinalIgnoreCase))
+                    _windowsServiceNames.Add(initService.Name);
+                else
+                    _linuxServiceNames.Add(initService.Name);
+                list.Add(initService);
+            }
         }
 
         return list;
@@ -282,7 +435,7 @@ public sealed class ComposeGenerator
                         }
                     }
                     resolved = remapServicePorts
-                        ? RemapServiceUrls(literalValue!, servicePortMap)
+                        ? RemapServiceUrls(literalValue!, servicePortMap, runtimeContext, os)
                         : literalValue;
                     resolved = runtimeContext.Detokenize(resolved, os);
                 }
@@ -328,7 +481,12 @@ public sealed class ComposeGenerator
             Dictionary<string, Dictionary<string, object?>> volumes,
             RuleRuntimeContext runtimeContext,
             string outputDirectory,
-            string os)
+            string os,
+            Dictionary<string, Dictionary<string, string>> configMaps,
+            Dictionary<string, int>? servicePortMap = null,
+            bool remapServicePorts = false,
+            HashSet<string>? namedVolumeRefs = null,
+            string workload = "")
         {
         var mounts = new List<string>();
         var vmSeq = GetSequence(container, "volumeMounts");
@@ -356,6 +514,18 @@ public sealed class ComposeGenerator
                 var hostPath = FormatHostPath(Path.Combine("configmaps", cmName), os);
                 var containerPath = AdjustContainerPathForOs(mountPath!, os);
                 EnsureHostPathExists(outputDirectory, hostPath);
+                if (configMaps.TryGetValue(cmName, out var cmData))
+                {
+                    var trimmed = hostPath.TrimStart('.', '\\', '/').Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                    var absDir = Path.Combine(outputDirectory, trimmed);
+                    foreach (var (key, rawValue) in cmData)
+                    {
+                        var value = remapServicePorts && servicePortMap is not null
+                            ? RemapServiceUrls(rawValue, servicePortMap, runtimeContext, os)
+                            : rawValue;
+                        File.WriteAllText(Path.Combine(absDir, key), value);
+                    }
+                }
                 mounts.Add($"{hostPath}:{containerPath}:{mode}");
                 continue;
             }
@@ -376,6 +546,20 @@ public sealed class ComposeGenerator
                 containerPath = AdjustContainerPathForOs(containerPath, os);
                 var mode = ro ? "ro" : "rw";
                 mounts.Add($"{hostPath}:{containerPath}:{mode}");
+                continue;
+            }
+
+            if (volMap.ContainsKey("emptyDir"))
+            {
+                // emptyDir volumes are shared between init containers and the main container within
+                // a Pod. In compose there's no equivalent — map to a named volume so init + main
+                // services can share the data across containers.
+                var namedVol = string.IsNullOrWhiteSpace(workload) ? name! : $"{workload}-{name}";
+                var containerPath = AdjustContainerPathForOs(mountPath!, os);
+                var mode = ro ? "ro" : "rw";
+                mounts.Add($"{namedVol}:{containerPath}:{mode}");
+                namedVolumeRefs?.Add(namedVol);
+                continue;
             }
         }
 
@@ -470,6 +654,40 @@ public sealed class ComposeGenerator
         return new string(buffer);
     }
 
+    /// <summary>
+    /// Pre-pass: determines whether a workload runs on Windows or Linux and records every
+    /// service name it would produce into <see cref="_windowsServiceNames"/> or
+    /// <see cref="_linuxServiceNames"/>. Must run before any <c>RemapServiceUrls</c> call
+    /// so cross-OS URL rewrites use the correct host.
+    /// </summary>
+    private void RegisterWorkloadOs(Dictionary<string, object?> doc, RuleRuntimeContext runtimeContext)
+    {
+        var name = GetString(doc, "metadata", "name") ?? "workload";
+        var workload = name.Split('-', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "jobs";
+        var template = GetMap(doc, "spec", "template", "spec");
+        if (template is null) return;
+
+        var os = DetectOs(template, workload, runtimeContext);
+        var isCrossposeWorkload = string.Equals(workload, "crosspose", StringComparison.OrdinalIgnoreCase);
+        var serviceWorkloadKey = isCrossposeWorkload ? "jobs" : workload;
+
+        foreach (var seqKey in new[] { "containers", "initContainers" })
+        {
+            var containers = GetSequence(template, seqKey);
+            if (containers is null) continue;
+            foreach (var item in containers)
+            {
+                if (item is not Dictionary<string, object?> container) continue;
+                var containerName = GetString(container, "name") ?? name;
+                var svcName = BuildServiceName(serviceWorkloadKey, containerName, isCrossposeWorkload);
+                if (string.Equals(os, "windows", StringComparison.OrdinalIgnoreCase))
+                    _windowsServiceNames.Add(svcName);
+                else
+                    _linuxServiceNames.Add(svcName);
+            }
+        }
+    }
+
     private void RegisterServicePorts(Dictionary<string, object?> doc, Dictionary<string, int> servicePortMap)
     {
         var name = GetString(doc, "metadata", "name");
@@ -489,8 +707,77 @@ public sealed class ComposeGenerator
         }
     }
 
-    private string BuildComposeYaml(List<ComposeService> services, string networkName)
+    /// <summary>
+    /// Reads a VirtualService and registers each host as an alias pointing to the same
+    /// host port as the destination k8s service. This lets RemapServiceUrls resolve URLs
+    /// like https://local-dev-svc-billing.example.com to localhost:&lt;port&gt; even though
+    /// the service port map key is "erp-api", not "billing".
+    /// </summary>
+    private void RegisterVirtualServiceAliases(Dictionary<string, object?> doc, Dictionary<string, int> servicePortMap)
     {
+        var hosts = GetSequence(doc, "spec", "hosts");
+        if (hosts is null) return;
+
+        // Get the destination service name from the first http route
+        var http = GetSequence(doc, "spec", "http");
+        if (http is null) return;
+        string? destService = null;
+        foreach (var route in http)
+        {
+            if (route is not Dictionary<string, object?> routeMap) continue;
+            var routeSeq = GetSequence(routeMap, "route");
+            if (routeSeq is null) continue;
+            foreach (var r in routeSeq)
+            {
+                if (r is not Dictionary<string, object?> rm) continue;
+                destService = GetString(GetMap(rm, "destination") ?? [], "host");
+                if (!string.IsNullOrWhiteSpace(destService)) break;
+            }
+            if (!string.IsNullOrWhiteSpace(destService)) break;
+        }
+
+        if (string.IsNullOrWhiteSpace(destService)) return;
+        if (!servicePortMap.TryGetValue(destService!, out var port)) return;
+
+        // Determine OS of the destination service so aliases inherit the same OS classification.
+        var destIsWindows = _windowsServiceNames.Contains(destService!);
+
+        // Register each VirtualService host as an alias for the destination port.
+        // Extract just the subdomain prefix (before the first dot) as the alias key
+        // so RemapServiceUrls can match it via the svc-<name> extraction.
+        foreach (var hostObj in hosts)
+        {
+            var host = hostObj as string ?? hostObj?.ToString();
+            if (string.IsNullOrWhiteSpace(host)) continue;
+            var subdomain = host!.Split('.')[0]; // e.g. "local-dev-svc-billing"
+            // Extract the svc-<name> portion that RemapServiceUrls captures
+            var svcIdx = subdomain.IndexOf("svc-", StringComparison.OrdinalIgnoreCase);
+            if (svcIdx >= 0)
+            {
+                var svcName = subdomain[(svcIdx + 4)..]; // e.g. "billing"
+                if (!string.IsNullOrWhiteSpace(svcName) && !servicePortMap.ContainsKey(svcName))
+                {
+                    servicePortMap[svcName] = port;
+                    // Propagate OS so HostFor() resolves cross-OS aliases correctly.
+                    if (destIsWindows) _windowsServiceNames.Add(svcName);
+                    else _linuxServiceNames.Add(svcName);
+                }
+            }
+        }
+    }
+
+    private string BuildComposeYaml(List<ComposeService> services, string networkName, bool isWindows, HashSet<string>? infraWithHealthcheck = null)
+    {
+        var jobNames = services
+            .Where(s => s.IsJob && !s.IsInitContainer)
+            .Select(s => s.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var initContainerNames = services
+            .Where(s => s.IsInitContainer)
+            .Select(s => s.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var svcMap = new Dictionary<string, object?>();
         foreach (var svc in services)
         {
@@ -504,6 +791,12 @@ public sealed class ComposeGenerator
                 definition["restart"] = svc.Restart;
             }
 
+            // K8s command → compose entrypoint; K8s args → compose command.
+            if (svc.Command is { Count: > 0 })
+                definition["entrypoint"] = svc.Command;
+            if (svc.Args is { Count: > 0 })
+                definition["command"] = svc.Args;
+
             if (svc.Ports.Any())
             {
                 definition["ports"] = svc.Ports;
@@ -514,9 +807,36 @@ public sealed class ComposeGenerator
                 definition["environment"] = svc.Environment;
             }
 
-            if (svc.DependsOn.Any())
+            var depMap = new Dictionary<string, object?>();
+            // Non-job services depend on job services (schema migrations etc.) in the same file.
+            // service_completed_successfully is not reliably honoured by podman-compose 1.x — it can
+            // leave dependents stuck in "created" forever. Use service_started + restart:on-failure
+            // on the app service to recover if the job hasn't finished yet.
+            if (!svc.IsJob)
             {
-                definition["depends_on"] = svc.DependsOn;
+                foreach (var job in jobNames)
+                    depMap[job] = new Dictionary<string, object?> { ["condition"] = "service_started" };
+            }
+            // All services (including other jobs) depend on init containers starting first.
+            // service_completed_successfully is not reliably honoured by podman-compose 1.x —
+            // use service_started like schema migration jobs; restart:on-failure on the main
+            // service handles retries if init hasn't finished populating the shared volume yet.
+            if (!svc.IsInitContainer)
+            {
+                foreach (var init in initContainerNames.Where(n => !depMap.ContainsKey(n)))
+                    depMap[init] = new Dictionary<string, object?> { ["condition"] = "service_started" };
+            }
+            // Infra dependencies use service_healthy when the infra service declares a healthcheck,
+            // otherwise service_started. This relies on the healthcheck being correctly configured
+            // (e.g. mssql uses /opt/mssql-tools18/bin/sqlcmd so the check actually passes).
+            foreach (var dep in svc.DependsOn.Where(d => !depMap.ContainsKey(d)))
+            {
+                var condition = infraWithHealthcheck?.Contains(dep) == true ? "service_healthy" : "service_started";
+                depMap[dep] = new Dictionary<string, object?> { ["condition"] = condition };
+            }
+            if (depMap.Count > 0)
+            {
+                definition["depends_on"] = depMap;
             }
 
             var volumes = new List<string>(svc.Volumes);
@@ -524,6 +844,11 @@ public sealed class ComposeGenerator
             if (volumes.Any())
             {
                 definition["volumes"] = volumes;
+            }
+
+            if (svc.Healthcheck is not null && svc.Healthcheck.Count > 0)
+            {
+                definition["healthcheck"] = svc.Healthcheck;
             }
 
             if (svc.ExtraHosts.Any())
@@ -534,13 +859,38 @@ public sealed class ComposeGenerator
             svcMap[svc.Name] = definition;
         }
 
-        var compose = new
+        // Windows containers run on the host HNS NAT stack. Creating additional NAT
+        // networks alongside the default "nat" fails with HNS 0x32 ("not supported").
+        // Reference the existing "nat" network as external so no new network is created.
+        object? networkDefinition = isWindows
+            ? new Dictionary<string, object?> { ["external"] = true, ["name"] = "nat" }
+            : (object?)new { };
+
+        // Collect named volumes (from emptyDir) declared across all services.
+        var allNamedVolumes = services
+            .SelectMany(s => s.NamedVolumeRefs)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (allNamedVolumes.Count > 0)
+        {
+            var namedVolumesMap = allNamedVolumes.ToDictionary(v => v, _ => (object?)null);
+            var compose = new
+            {
+                services = svcMap,
+                networks = new Dictionary<string, object?> { { networkName, networkDefinition } },
+                volumes = namedVolumesMap
+            };
+            return _serializer.Serialize(compose);
+        }
+
+        var composeNoVolumes = new
         {
             services = svcMap,
-            networks = new Dictionary<string, object?> { { networkName, new { } } }
+            networks = new Dictionary<string, object?> { { networkName, networkDefinition } }
         };
 
-        return _serializer.Serialize(compose);
+        return _serializer.Serialize(composeNoVolumes);
     }
 
     private static string BuildServiceName(string workload, string containerName, bool skipWorkloadPrefix = false)
@@ -582,19 +932,87 @@ public sealed class ComposeGenerator
             return Regex.Replace(value, pattern, NatGatewayPlaceholder, RegexOptions.IgnoreCase);
         }
 
-    private string RemapServiceUrls(string value, Dictionary<string, int> servicePortMap)
+    private string RemapServiceUrls(string value, Dictionary<string, int> servicePortMap, RuleRuntimeContext runtimeContext, string callerOs = "linux")
     {
-        var regex = new Regex("(?<svc>[A-Za-z0-9-]+)\\.default\\.svc\\.cluster\\.local(?::(?<port>\\d+))?", RegexOptions.IgnoreCase);
-        return regex.Replace(value, m =>
+        var callerIsLinux = !string.Equals(callerOs, "windows", StringComparison.OrdinalIgnoreCase);
+
+        // Choose host based on whether the target service is on a different OS from the caller.
+        // Linux caller → Windows target: use NAT gateway (localhost doesn't cross the WSL boundary).
+        // Windows caller → Linux target: use NAT gateway (rewriteLoopbackHosts will also catch this but
+        //                                explicit here avoids relying on post-processing).
+        // Same-OS: localhost is correct.
+        string HostFor(string svc) =>
+            (_windowsServiceNames.Contains(svc) && callerIsLinux) ||
+            (_linuxServiceNames.Contains(svc) && !callerIsLinux)
+                ? NatGatewayPlaceholder
+                : "localhost";
+
+        // Rewrite in-cluster Kubernetes service URLs: <svc>.default.svc.cluster.local → localhost:<port>
+        // These URLs are cluster-internal and never reachable outside k8s — blank them if not running locally.
+        var clusterRegex = new Regex("(?:https?://)?(?<svc>[A-Za-z0-9-]+)\\.default\\.svc\\.cluster\\.local(?::(?<port>\\d+))?(?<path>/[^\\s\"']*)?", RegexOptions.IgnoreCase);
+        value = clusterRegex.Replace(value, m =>
         {
             var svc = m.Groups["svc"].Value;
-            if (svc.Length == 0) return m.Value;
             if (servicePortMap.TryGetValue(svc, out var hostPort))
-            {
-                return $"localhost:{hostPort}";
-            }
-            return m.Value;
+                return $"http://{HostFor(svc)}:{hostPort}{m.Groups["path"].Value}";
+            return "http://not-deployed";
         });
+
+        // Rewrite external service root URLs matching configured glob patterns (local-service-match).
+        // Glob supports a single * in the subdomain: e.g. "local-*.example.com".
+        // The * portion must contain "svc-<name>" from which the service name is extracted.
+        // If found in the local port map → http://localhost:<port>. If not (disabled in values) → blank.
+        foreach (var pattern in runtimeContext.LocalServicePatterns)
+        {
+            var svcRegex = BuildServiceGlobRegex(pattern);
+            if (svcRegex is null) continue;
+            value = svcRegex.Replace(value, m =>
+            {
+                var svc = m.Groups["svc"].Value;
+                if (servicePortMap.TryGetValue(svc, out var hostPort))
+                {
+                    var path = m.Groups["path"].Value;
+                    return $"http://{HostFor(svc)}:{hostPort}{path}";
+                }
+                return "http://not-deployed";
+            });
+        }
+
+        // Apply explicit url-overrides from config (case-insensitive substring replace).
+        foreach (var (from, to) in runtimeContext.UrlOverrides)
+        {
+            var idx = value.IndexOf(from, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+                value = value[..idx] + to + value[(idx + from.Length)..];
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Converts a glob hostname pattern (e.g. <c>local-*.example.com</c>) into a regex
+    /// that matches the full service URL and captures the service name from the <c>svc-&lt;name&gt;</c>
+    /// segment within the wildcard portion.
+    /// </summary>
+    private static Regex? BuildServiceGlobRegex(string pattern)
+    {
+        var star = pattern.IndexOf('*');
+        if (star < 0)
+        {
+            // No wildcard — treat the whole string as a domain suffix.
+            var escaped = Regex.Escape(pattern.TrimStart('.'));
+            return new Regex(
+                $@"https?://(?:[A-Za-z0-9-]+-)?svc-(?<svc>[A-Za-z0-9-]+)\.{escaped}(?<path>/[^\s""']*)?",
+                RegexOptions.IgnoreCase);
+        }
+
+        // Split around the single *.
+        var prefix = Regex.Escape(pattern[..star]);
+        var suffix = Regex.Escape(pattern[(star + 1)..]);
+        // The * matches the environment prefix + "svc-<name>", e.g. "dev-svc-core".
+        return new Regex(
+            $@"https?://{prefix}(?:[A-Za-z0-9-]+-)?svc-(?<svc>[A-Za-z0-9-]+){suffix}(?<path>/[^\s""']*)?",
+            RegexOptions.IgnoreCase);
     }
 
     private int GetNextHostPort()
@@ -606,6 +1024,18 @@ public sealed class ComposeGenerator
         {
             port = _rand.Next(min, max);
         } while (!_usedPorts.Add(port));
+        return port;
+    }
+
+    private int GetNextInfraHostPort()
+    {
+        const int min = 40000;
+        const int max = 50000;
+        int port;
+        do
+        {
+            port = _rand.Next(min, max);
+        } while (!_usedInfraPorts.Add(port) || _usedPorts.Contains(port));
         return port;
     }
 
@@ -641,21 +1071,31 @@ public sealed class ComposeGenerator
 
     private static object? Normalize(object? value)
     {
-        switch (value)
+        // YamlDotNet deserializes nested mappings as Dictionary<object, object> (non-nullable),
+        // while the top-level type is Dictionary<object, object?> (nullable). Due to generic
+        // invariance, IDictionary<object, object?> only matches the top-level. We must also
+        // handle IDictionary<object, object> for nested maps, otherwise keys like
+        // "kubernetes.io/os" inside nodeSelector are never converted to Dictionary<string, object?>
+        // and GetNode silently fails to find them.
+        if (value is IDictionary<object, object?> mapNullable)
         {
-            case IDictionary<object, object?> map:
-                var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                foreach (var kvp in map)
-                {
-                    var key = kvp.Key?.ToString() ?? string.Empty;
-                    dict[key] = Normalize(kvp.Value);
-                }
-                return dict;
-            case IEnumerable<object?> seq when value is not string:
-                return seq.Select(Normalize).ToList();
-            default:
-                return value;
+            var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in mapNullable)
+                dict[kvp.Key?.ToString() ?? string.Empty] = Normalize(kvp.Value);
+            return dict;
         }
+        if (value is IDictionary<object, object> mapNonNullable)
+        {
+            var dict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in mapNonNullable)
+                dict[kvp.Key?.ToString() ?? string.Empty] = Normalize(kvp.Value);
+            return dict;
+        }
+        if (value is IEnumerable<object?> seqNullable && value is not string)
+            return seqNullable.Select(Normalize).ToList();
+        if (value is IEnumerable<object> seqNonNullable && value is not string)
+            return seqNonNullable.Select(x => Normalize(x)).ToList();
+        return value;
     }
 
     private static object? ConvertNode(YamlNode node)
@@ -679,6 +1119,75 @@ public sealed class ComposeGenerator
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Translates a Kubernetes liveness or readiness probe into a Docker Compose healthcheck block.
+    /// Returns null if the probe type is not supported or the probe map is missing.
+    /// Supported: exec, httpGet (Linux: bash /dev/tcp, Windows: Invoke-WebRequest), tcpSocket (Linux only).
+    /// </summary>
+    private static Dictionary<string, object?>? TranslateProbe(Dictionary<string, object?>? probe, string os)
+    {
+        if (probe is null) return null;
+        var isWindows = string.Equals(os, "windows", StringComparison.OrdinalIgnoreCase);
+
+        List<object?>? test = null;
+
+        var exec = GetMap(probe, "exec");
+        if (exec is not null)
+        {
+            var cmd = GetSequence(exec, "command");
+            if (cmd is not null && cmd.Count > 0)
+            {
+                var args = new List<object?> { "CMD" };
+                args.AddRange(cmd);
+                test = args;
+            }
+        }
+
+        if (test is null)
+        {
+            var httpGet = GetMap(probe, "httpGet");
+            if (httpGet is not null)
+            {
+                var path = GetString(httpGet, "path") ?? "/";
+                var portStr = GetInt(httpGet, "port")?.ToString() ?? GetString(httpGet, "port") ?? "80";
+                var url = $"http://localhost:{portStr}{path}";
+                test = isWindows
+                    ? new List<object?> { "CMD", "powershell", "-command",
+                        $"try {{ Invoke-WebRequest -UseBasicParsing -Uri '{url}' | Out-Null }} catch {{ exit 1 }}" }
+                    // bash /dev/tcp is available in any bash-equipped image without requiring curl/wget.
+                    : new List<object?> { "CMD-SHELL", $"bash -c 'echo > /dev/tcp/localhost/{portStr}'" };
+            }
+        }
+
+        if (test is null)
+        {
+            var tcpSocket = GetMap(probe, "tcpSocket");
+            if (tcpSocket is not null && !isWindows)
+            {
+                var portStr = GetInt(tcpSocket, "port")?.ToString() ?? GetString(tcpSocket, "port") ?? "80";
+                test = new List<object?> { "CMD-SHELL", $"nc -z localhost {portStr}" };
+            }
+        }
+
+        if (test is null) return null;
+
+        var healthcheck = new Dictionary<string, object?> { ["test"] = test };
+
+        var interval = GetInt(probe, "periodSeconds");
+        if (interval.HasValue) healthcheck["interval"] = $"{interval.Value}s";
+
+        var timeout = GetInt(probe, "timeoutSeconds");
+        if (timeout.HasValue) healthcheck["timeout"] = $"{timeout.Value}s";
+
+        var startPeriod = GetInt(probe, "initialDelaySeconds");
+        if (startPeriod.HasValue) healthcheck["start_period"] = $"{startPeriod.Value}s";
+
+        var retries = GetInt(probe, "failureThreshold");
+        if (retries.HasValue) healthcheck["retries"] = retries.Value;
+
+        return healthcheck;
     }
 
     private static Dictionary<string, object?>? GetMap(Dictionary<string, object?> map, params string[] path)
@@ -759,6 +1268,14 @@ public sealed class ComposeGenerator
         public List<string> ExtraHosts { get; set; } = new();
         public HashSet<string> DependsOn { get; } = new(StringComparer.OrdinalIgnoreCase);
         public string? Restart { get; set; } = "unless-stopped";
+        public bool IsJob { get; set; }
+        /// <summary>True for K8s init containers converted to run-once compose services.</summary>
+        public bool IsInitContainer { get; set; }
+        /// <summary>Named compose volumes (from emptyDir) required by this service.</summary>
+        public HashSet<string> NamedVolumeRefs { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<string>? Command { get; set; }
+        public List<string>? Args { get; set; }
+        public Dictionary<string, object?>? Healthcheck { get; set; }
     }
 
     private List<string> BuildExtraHosts(RuleRuntimeContext runtimeContext, bool targetIsWindows)
@@ -779,19 +1296,37 @@ public sealed class ComposeGenerator
         private readonly ILogger _logger;
         private readonly Dictionary<string, InfraServiceContext> _infra;
         private readonly Dictionary<string, SecretEntry> _secrets;
-        private readonly HashSet<int> _portProxyPorts;
+        // listen port -> connect (high) port
+        private readonly Dictionary<int, int> _portProxyPorts;
+        private readonly HashSet<string> _windowsWorkloads;
+        private readonly List<string> _localServicePatterns;
+        private readonly List<(string From, string To)> _urlOverrides;
+        private readonly Func<int> _infraPortAllocator;
 
-        private RuleRuntimeContext(ILogger logger)
+        private RuleRuntimeContext(ILogger logger, Func<int> infraPortAllocator)
         {
             _logger = logger;
             _infra = new Dictionary<string, InfraServiceContext>(StringComparer.OrdinalIgnoreCase);
             _secrets = new Dictionary<string, SecretEntry>(StringComparer.OrdinalIgnoreCase);
-            _portProxyPorts = new HashSet<int>();
+            _portProxyPorts = new Dictionary<int, int>();
+            _windowsWorkloads = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _localServicePatterns = new List<string>();
+            _urlOverrides = new List<(string, string)>();
+            _infraPortAllocator = infraPortAllocator;
         }
 
-        public static RuleRuntimeContext Build(IReadOnlyList<DekomposeRuleSet> ruleSets, ILogger logger)
+        public bool IsWindowsWorkload(string workload) =>
+            _windowsWorkloads.Any(pattern => workload.StartsWith(pattern, StringComparison.OrdinalIgnoreCase));
+
+        public IReadOnlyList<string> LocalServicePatterns => _localServicePatterns;
+        public IReadOnlyList<(string From, string To)> UrlOverrides => _urlOverrides;
+        public HashSet<string> InfraWithHealthcheck =>
+            _infra.Values.Where(i => i.Healthcheck is not null).Select(i => i.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public static RuleRuntimeContext Build(IReadOnlyList<DekomposeRuleSet> ruleSets, ILogger logger, Func<int> infraPortAllocator)
         {
-            var context = new RuleRuntimeContext(logger);
+            var context = new RuleRuntimeContext(logger, infraPortAllocator);
             if (ruleSets is null) return context;
 
             foreach (var rule in ruleSets)
@@ -802,6 +1337,23 @@ public sealed class ComposeGenerator
                     rule.SecretKeyRefs?.Count ?? 0);
                 context.AddInfrastructure(rule.Infrastructure);
                 context.AddSecrets(rule.SecretKeyRefs);
+                if (rule.WindowsWorkloads is { Count: > 0 })
+                {
+                    foreach (var w in rule.WindowsWorkloads)
+                        context._windowsWorkloads.Add(w);
+                }
+                if (rule.LocalServiceMatch is { Count: > 0 })
+                {
+                    foreach (var p in rule.LocalServiceMatch)
+                        if (!string.IsNullOrWhiteSpace(p))
+                            context._localServicePatterns.Add(p.Trim());
+                }
+                if (rule.UrlOverrides is { Count: > 0 })
+                {
+                    foreach (var o in rule.UrlOverrides)
+                        if (!string.IsNullOrWhiteSpace(o.From))
+                            context._urlOverrides.Add((o.From, o.To ?? string.Empty));
+                }
             }
 
             logger.LogInformation("Initialized rule runtime context with {InfraCount} infra definitions and {SecretCount} secrets.",
@@ -825,7 +1377,7 @@ public sealed class ComposeGenerator
                 {
                     continue;
                 }
-                _infra[def.Name] = new InfraServiceContext(def, this);
+                _infra[def.Name] = new InfraServiceContext(def, this, _infraPortAllocator);
             }
         }
 
@@ -1191,16 +1743,19 @@ public sealed class ComposeGenerator
         {
             if (ports is null) return;
 
-            foreach (var port in ports)
+            foreach (var portDef in ports)
             {
-                if (TryParseHostPort(port, out var hostPort) && hostPort > 0)
+                // portDef is "highPort:containerPort" — listenPort=containerPort, connectPort=highPort
+                if (TryParseContainerPort(portDef, out var containerPort, out var hostPort)
+                    && containerPort > 0 && hostPort > 0)
                 {
-                    _portProxyPorts.Add(hostPort);
+                    _portProxyPorts[containerPort] = hostPort;
                 }
             }
         }
 
-        public IReadOnlyCollection<int> GetPortProxyPorts() => _portProxyPorts;
+        // Returns listenPort -> connectPort mapping
+        public IReadOnlyDictionary<int, int> GetPortProxyPorts() => _portProxyPorts;
 
         public IList<object> GetInfraSummaries()
         {
@@ -1221,15 +1776,17 @@ public sealed class ComposeGenerator
         {
             private readonly RuleRuntimeContext _runtimeContext;
 
-            public InfraServiceContext(DekomposeInfraDefinition definition, RuleRuntimeContext runtimeContext)
+            public InfraServiceContext(DekomposeInfraDefinition definition, RuleRuntimeContext runtimeContext, Func<int> infraPortAllocator)
             {
                 _runtimeContext = runtimeContext;
                 Name = definition.Name;
                 Image = definition.Image;
                 Command = definition.Command;
                 Environment = new Dictionary<string, string>(definition.Environment ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
-                Ports = new List<string>(definition.Ports);
-                _runtimeContext.RegisterPortProxyPorts(definition.Ports);
+                // Remap well-known container ports to random high host ports to avoid WSL2 port reservation conflicts.
+                // "1433:1433" becomes e.g. "43210:1433". portproxy then listens on NAT:1433 -> 127.0.0.1:43210.
+                Ports = RemapPorts(definition.Ports, infraPortAllocator);
+                _runtimeContext.RegisterPortProxyPorts(Ports);
                 Volumes = new List<string>(definition.Volumes ?? new List<string>());
                 Healthcheck = definition.Healthcheck is null || definition.Healthcheck.Count == 0
                     ? null
@@ -1271,6 +1828,27 @@ public sealed class ComposeGenerator
                 return resolved;
             }
 
+            /// <summary>
+            /// Rewrites each port definition so the host side uses a random high port.
+            /// "1433:1433" → "43210:1433". Already-high host ports (>=40000) are left as-is.
+            /// </summary>
+            private static List<string> RemapPorts(IEnumerable<string> ports, Func<int> allocator)
+            {
+                var result = new List<string>();
+                foreach (var p in ports)
+                {
+                    if (TryParseContainerPort(p, out var containerPort, out var hostPort) && hostPort < 40000)
+                    {
+                        result.Add($"{allocator()}:{containerPort}");
+                    }
+                    else
+                    {
+                        result.Add(p);
+                    }
+                }
+                return result;
+            }
+
             public async Task EmitAsync(string outputDirectory, string networkName, ISerializer serializer, CancellationToken cancellationToken)
             {
                 if (string.IsNullOrWhiteSpace(Image) && (Build is null || Build.Count == 0)) return;
@@ -1305,6 +1883,10 @@ public sealed class ComposeGenerator
                     service["healthcheck"] = Healthcheck;
                 }
 
+                object? infraNetworkDef = IsWindows
+                    ? new Dictionary<string, object?> { ["external"] = true, ["name"] = "nat" }
+                    : (object?)new { };
+
                 var compose = new
                 {
                     services = new Dictionary<string, object?>
@@ -1313,7 +1895,7 @@ public sealed class ComposeGenerator
                     },
                     networks = new Dictionary<string, object?>
                     {
-                        [networkName] = new { }
+                        [networkName] = infraNetworkDef
                     }
                 };
 
@@ -1373,6 +1955,33 @@ public sealed class ComposeGenerator
             }
 
             return int.TryParse(candidate, out hostPort);
+        }
+
+        /// <summary>
+        /// Parses "hostPort:containerPort" into both parts.
+        /// For single-token definitions containerPort == hostPort.
+        /// </summary>
+        private static bool TryParseContainerPort(string? definition, out int containerPort, out int hostPort)
+        {
+            containerPort = 0;
+            hostPort = 0;
+            if (string.IsNullOrWhiteSpace(definition)) return false;
+
+            var parts = definition.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length == 0) return false;
+
+            if (parts.Length == 1)
+            {
+                if (!int.TryParse(parts[0], out var port)) return false;
+                containerPort = port;
+                hostPort = port;
+                return true;
+            }
+
+            // last token is containerPort, second-to-last is hostPort
+            if (!int.TryParse(parts[^1], out containerPort)) return false;
+            if (!int.TryParse(parts[^2], out hostPort)) return false;
+            return true;
         }
     }
 }

@@ -11,8 +11,9 @@ The target user is a developer running hybrid Windows/Linux workloads locally on
 
 ## Current Status
 
-- **Working**: Full compose generation pipeline (ComposeGenerator), compose orchestration (up/down/restart/stop/start/logs/top/ps), 18+ Doctor checks with fixes, container dashboard with live logs, Dekompose GUI with chart source management, Helm/OCI source support, portable mode, dark/light themes, Serilog file logging with secret sanitization, NAT gateway bridging with port proxy.
-- **Not started**: Test suite, CI/CD.
+- **Working**: Full compose generation pipeline (ComposeGenerator), compose orchestration (up/down/restart/stop/start/logs/top/ps), full CLI parity (container/images/volumes/bundles/deployments/charts subcommands), deploy/remove commands, 20+ Doctor checks with fixes, container dashboard with live logs, Charts view with pull-from-source, Dekompose GUI with chart source management, Helm/OCI source support, portable mode, offline mode, dark/light themes, Serilog file logging with secret sanitization, NAT gateway bridging with port proxy, image/volume pruning. Podman start/restart uses `up --force-recreate` to avoid stale network namespace. Job-type K8s resources emit `service_completed_successfully` depends_on conditions.
+- **In progress**: CI/CD pipeline.
+- **Done**: Test suite (~170 tests across `Crosspose.Core.Tests`, `Crosspose.Doctor.Tests`, `Crosspose.Dekompose.Tests`).
 
 ## Tech Stack
 
@@ -20,8 +21,4 @@ The target user is a developer running hybrid Windows/Linux workloads locally on
 - WPF for GUI projects (`net10.0-windows10.0.19041`)
 - NuGet: `Microsoft.Extensions.*`, `YamlDotNet`, `Tomlyn`, `Serilog`, `FluentIcons.Wpf`
 - Configuration via `crosspose.yml` (YAML, with portable mode support)
-- 10 projects in `Crosspose.sln`
-
-## Relationship to PowerShell Prototype
-
-The prototype at `C:\git\crossposeps` was the original implementation. The .NET rewrite has largely superseded it — compose generation, orchestration, and doctor checks are all implemented. The prototype remains a reference for edge cases.
+- 10 projects in `Crosspose.sln` + 3 test projects

@@ -20,4 +20,9 @@
     <SolidColorBrush x:Key="ErrorBorder" Color="#EF4444" />
     <SolidColorBrush x:Key="ErrorBackground" Color="#FEE2E2" />
     <SolidColorBrush x:Key="ErrorText" Color="#991B1B" />
+
+    <!-- Loading overlay -->
+    <SolidColorBrush x:Key="OverlayBackdrop" Color="#88000000" />
+    <SolidColorBrush x:Key="OverlayCard" Color="#F2FFFFFF" />
+    <SolidColorBrush x:Key="OverlayForeground" Color="#111827" />
 </ResourceDictionary>

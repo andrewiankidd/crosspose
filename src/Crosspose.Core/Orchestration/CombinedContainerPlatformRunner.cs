@@ -1,4 +1,3 @@
-using System;
 using System.Text;
 using Crosspose.Core.Diagnostics;
 
@@ -108,6 +107,42 @@ public sealed class CombinedContainerPlatformRunner : IContainerPlatformRunner
         TryResolveRunner(name, out var runner, out var actualName)
             ? runner!.RemoveVolumeAsync(actualName, cancellationToken)
             : Task.FromResult(false);
+
+    public async Task<bool> PruneImagesAsync(CancellationToken cancellationToken = default)
+    {
+        var dockerTask = _docker.PruneImagesAsync(cancellationToken);
+        var podmanTask = _podman.PruneImagesAsync(cancellationToken);
+        var results = await Task.WhenAll(dockerTask, podmanTask).ConfigureAwait(false);
+        return results.All(r => r);
+    }
+
+    public async Task<bool> PruneVolumesAsync(CancellationToken cancellationToken = default)
+    {
+        var dockerTask = _docker.PruneVolumesAsync(cancellationToken);
+        var podmanTask = _podman.PruneVolumesAsync(cancellationToken);
+        var results = await Task.WhenAll(dockerTask, podmanTask).ConfigureAwait(false);
+        return results.All(r => r);
+    }
+
+    public Task<ContainerInspectResult?> InspectContainerAsync(string id, CancellationToken cancellationToken = default) =>
+        TryResolveRunner(id, out var runner, out var actualId)
+            ? runner!.InspectContainerAsync(actualId, cancellationToken)
+            : Task.FromResult<ContainerInspectResult?>(null);
+
+    public Task<ContainerStatsResult?> GetContainerStatsAsync(string id, CancellationToken cancellationToken = default) =>
+        TryResolveRunner(id, out var runner, out var actualId)
+            ? runner!.GetContainerStatsAsync(actualId, cancellationToken)
+            : Task.FromResult<ContainerStatsResult?>(null);
+
+    public Task<ProcessResult> ExecInContainerAsync(string id, string commandLine, CancellationToken cancellationToken = default) =>
+        TryResolveRunner(id, out var runner, out var actualId)
+            ? runner!.ExecInContainerAsync(actualId, commandLine, cancellationToken)
+            : Task.FromResult(new ProcessResult(-1, string.Empty, "Unknown platform."));
+
+    public Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default) =>
+        TryResolveRunner(id, out var runner, out var actualId)
+            ? runner!.GetContainerLogsAsync(actualId, tail, cancellationToken)
+            : Task.FromResult(new ProcessResult(-1, string.Empty, "Unknown platform."));
 
     private static PlatformCommandResult Merge(string header, PlatformCommandResult docker, PlatformCommandResult podman)
     {

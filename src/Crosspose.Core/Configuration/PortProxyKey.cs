@@ -7,20 +7,39 @@ public static class PortProxyKey
 {
     private const string Prefix = "port-proxy:";
 
-    public static string Format(int port, string? network)
+    /// <summary>
+    /// Formats a key encoding both the listen port (what Docker containers connect to on the NAT
+    /// gateway) and the connect port (the high host port Podman binds to inside WSL2).
+    /// Format: "port-proxy:{listenPort}>{connectPort}@{network}" or "port-proxy:{port}" when ports match.
+    /// </summary>
+    public static string Format(int listenPort, int connectPort, string? network)
     {
-        if (port <= 0) throw new ArgumentOutOfRangeException(nameof(port));
+        if (listenPort <= 0) throw new ArgumentOutOfRangeException(nameof(listenPort));
+        if (connectPort <= 0) throw new ArgumentOutOfRangeException(nameof(connectPort));
+
+        var portPart = connectPort != listenPort
+            ? $"{listenPort}>{connectPort}"
+            : $"{listenPort}";
+
         if (string.IsNullOrWhiteSpace(network))
         {
-            return $"{Prefix}{port}";
+            return $"{Prefix}{portPart}";
         }
 
-        return $"{Prefix}{port}@{network}";
+        return $"{Prefix}{portPart}@{network}";
     }
 
-    public static bool TryParse(string value, out int port, out string? network)
+    /// <summary>Backward-compatible overload where listenPort == connectPort.</summary>
+    public static string Format(int port, string? network) => Format(port, port, network);
+
+    /// <summary>
+    /// Parses a key produced by <see cref="Format(int,int,string?)"/>.
+    /// If no connect port is encoded, <paramref name="connectPort"/> equals <paramref name="listenPort"/>.
+    /// </summary>
+    public static bool TryParse(string value, out int listenPort, out int connectPort, out string? network)
     {
-        port = 0;
+        listenPort = 0;
+        connectPort = 0;
         network = null;
         if (string.IsNullOrWhiteSpace(value)) return false;
         if (!value.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)) return false;
@@ -30,20 +49,51 @@ public static class PortProxyKey
 
         string? networkPart = null;
         var atIndex = payload.IndexOf('@');
-        var portPart = payload;
+        var portSection = payload;
         if (atIndex >= 0)
         {
-            portPart = payload[..atIndex];
+            portSection = payload[..atIndex];
             networkPart = payload[(atIndex + 1)..];
         }
 
-        if (!int.TryParse(portPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedPort) || parsedPort <= 0)
+        var gtIndex = portSection.IndexOf('>');
+        string portPart;
+        string? connectPortPart;
+        if (gtIndex >= 0)
         {
-            return false;
+            portPart = portSection[..gtIndex];
+            connectPortPart = portSection[(gtIndex + 1)..];
+        }
+        else
+        {
+            portPart = portSection;
+            connectPortPart = null;
         }
 
-        port = parsedPort;
+        if (!int.TryParse(portPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedListen) || parsedListen <= 0)
+            return false;
+
+        listenPort = parsedListen;
+
+        if (connectPortPart is not null)
+        {
+            if (!int.TryParse(connectPortPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedConnect) || parsedConnect <= 0)
+                return false;
+            connectPort = parsedConnect;
+        }
+        else
+        {
+            connectPort = parsedListen;
+        }
+
         network = string.IsNullOrWhiteSpace(networkPart) ? null : networkPart.Trim();
         return true;
+    }
+
+    /// <summary>Backward-compatible overload that discards the connect port.</summary>
+    public static bool TryParse(string value, out int port, out string? network)
+    {
+        var ok = TryParse(value, out port, out _, out network);
+        return ok;
     }
 }

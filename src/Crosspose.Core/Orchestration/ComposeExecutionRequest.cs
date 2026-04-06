@@ -11,4 +11,10 @@ public sealed record ComposeExecutionRequest(
 public sealed record ComposeExecutionResult(PlatformCommandResult? DockerResult, PlatformCommandResult? PodmanResult)
 {
     public bool HasAnyOutput => DockerResult is not null || PodmanResult is not null;
+
+    /// <summary>
+    /// True when portproxy/firewall rules need to be applied but the process is not elevated.
+    /// The caller should re-run the fix with administrator rights (e.g. launch Doctor as admin).
+    /// </summary>
+    public bool PortProxyFixRequired { get; init; }
 }

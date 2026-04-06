@@ -15,6 +15,7 @@ using Crosspose.Core.Logging;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Sources;
 using Crosspose.Doctor.Checks;
+using Crosspose.Ui;
 
 namespace Crosspose.Dekompose.Gui;
 
@@ -113,8 +114,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public string DekomposeHeader => string.IsNullOrWhiteSpace(DekomposeFilePath)
-        ? "Using crosspose.yml dekompose settings"
-        : $"Merged dekompose settings from {DekomposeFilePath}";
+        ? string.Empty
+        : $"Using dekompose config: {Path.GetFileName(DekomposeFilePath)}";
 
     private bool _compressOutput;
     public bool CompressOutput
@@ -195,6 +196,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Dummy source used when a local chart path is pre-supplied via --chart
+    private static readonly ChartSourceListItem LocalFileSource = new()
+    {
+        Name = "Local file", Url = string.Empty, IsOci = false
+    };
+
     public MainWindow(string? initialOutput = null, bool compressOutput = false, bool includeInfra = false, bool remapServicePorts = false)
     {
         InitializeComponent();
@@ -224,6 +231,60 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        var preSuppliedChart = App.InitialChartPath;
+        if (!string.IsNullOrWhiteSpace(preSuppliedChart) && File.Exists(preSuppliedChart))
+        {
+            // Local chart mode — hide source browsing, show preset chart display
+            SourceRow.Visibility = Visibility.Collapsed;
+            ChartRow.Visibility = Visibility.Collapsed;
+            VersionRow.Visibility = Visibility.Collapsed;
+            SourceHeader.Visibility = Visibility.Collapsed;
+            PresetChartButton.Content = Path.GetFileName(preSuppliedChart);
+            PresetChartRow.Visibility = Visibility.Visible;
+
+            ChartSources.Add(LocalFileSource);
+            _selectedSource = LocalFileSource;
+            var local = new HelmChartSearchEntry { Name = preSuppliedChart, Description = "Local chart" };
+            Charts.Add(local);
+            _selectedChart = local;
+
+            // Pre-populate values from sibling file arg (takes precedence over chart-embedded defaults)
+            var preSuppliedValues = App.InitialValuesPath;
+            if (!string.IsNullOrWhiteSpace(preSuppliedValues) && File.Exists(preSuppliedValues))
+            {
+                ValuesFilePath = preSuppliedValues;
+                ValuesContent = await File.ReadAllTextAsync(preSuppliedValues);
+                _logger.LogInformation("Pre-loaded values from {Path}", preSuppliedValues);
+            }
+
+            // Pre-populate dekompose config from sibling file arg
+            var preSuppliedDekomposeConfig = App.InitialDekomposeConfigPath;
+            if (!string.IsNullOrWhiteSpace(preSuppliedDekomposeConfig) && File.Exists(preSuppliedDekomposeConfig))
+            {
+                DekomposeFilePath = preSuppliedDekomposeConfig;
+                _logger.LogInformation("Pre-loaded dekompose config from {Path}", preSuppliedDekomposeConfig);
+            }
+
+            if (string.IsNullOrWhiteSpace(ValuesFilePath))
+            {
+                SetBusy("Loading chart values...");
+                try
+                {
+                    await _helm.EnsureHelmAsync();
+                    await LoadValuesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to load values for preset chart.");
+                }
+                finally
+                {
+                    ClearBusy();
+                }
+            }
+            return;
+        }
+
         await InitializeHelmAsync();
     }
 
@@ -726,29 +787,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void OnLoadDekomposeConfigClick(object sender, RoutedEventArgs e)
-    {
-        var dlg = new Microsoft.Win32.OpenFileDialog
-        {
-            Filter = "Dekompose YAML|*.dekompose.yml;*.dekompose.yaml;*.yml;*.yaml|All files|*.*"
-        };
-        if (dlg.ShowDialog(this) == true)
-        {
-            try
-            {
-                CrossposeConfigurationStore.MergeDekomposeConfiguration(dlg.FileName);
-                DekomposeFilePath = dlg.FileName;
-                AppendLog($"[Dekompose] Merged dekompose config from {dlg.FileName} into {CrossposeConfigurationStore.ConfigPath}.");
-                StatusMessage = "Merged dekompose configuration.";
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Failed to merge dekompose config: {ex.Message}";
-                System.Windows.MessageBox.Show(this, StatusMessage, "Dekompose config failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-    }
-
     private void OnBrowseOutputClick(object sender, RoutedEventArgs e)
     {
         var dlg = new System.Windows.Forms.FolderBrowserDialog();
@@ -819,14 +857,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         SetBusy("Running dekompose...");
         Directory.CreateDirectory(OutputDirectory);
-        var tempValues = Path.GetTempFileName();
-        await File.WriteAllTextAsync(tempValues, ValuesContent);
 
-        var dekomposeProj = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Crosspose.Dekompose", "Crosspose.Dekompose.csproj"));
-        var args = $"run --project \"{dekomposeProj}\" --chart \"{chartRef}\" --values \"{tempValues}\" --output \"{OutputDirectory}\"";
+        // Use the original values file path when available so the filename is preserved in
+        // the output folder name. Fall back to a temp file only for in-memory content.
+        string valuesPath;
+        string? tempValuesToClean = null;
+        if (!string.IsNullOrWhiteSpace(ValuesFilePath) && File.Exists(ValuesFilePath))
+        {
+            valuesPath = ValuesFilePath;
+        }
+        else
+        {
+            valuesPath = Path.GetTempFileName();
+            tempValuesToClean = valuesPath;
+            await File.WriteAllTextAsync(valuesPath, ValuesContent);
+        }
+
+        var dekomposeProj = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Crosspose.Dekompose.Cli", "Crosspose.Dekompose.Cli.csproj"));
+        var args = $"run --project \"{dekomposeProj}\" --chart \"{chartRef}\" --values \"{valuesPath}\" --output \"{OutputDirectory}\"";
         if (!string.IsNullOrWhiteSpace(SelectedVersion?.Tag))
         {
             args += $" --chart-version \"{SelectedVersion.Tag}\"";
+        }
+        if (!string.IsNullOrWhiteSpace(DekomposeFilePath) && File.Exists(DekomposeFilePath))
+        {
+            args += $" --dekompose-config \"{DekomposeFilePath}\"";
         }
         if (CompressOutput)
         {
@@ -857,6 +912,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             ClearBusy();
+            if (tempValuesToClean is not null)
+                try { File.Delete(tempValuesToClean); } catch { /* best effort */ }
         }
     }
 
@@ -931,14 +988,3 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
-public sealed class ChartSourceListItem
-{
-    public string Name { get; set; } = string.Empty;
-    public string Url { get; set; } = string.Empty;
-    public bool IsOci { get; set; }
-    public string? Username { get; set; }
-    public string? Password { get; set; }
-    public string? BearerToken { get; set; }
-    public string? Filter { get; set; }
-    public string Display => $"{Name} ({(IsOci ? "OCI" : "Helm")})";
-}

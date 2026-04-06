@@ -1,0 +1,221 @@
+<Window x:Class="Crosspose.Ui.PickChartWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:Crosspose.Ui"
+        Title="Pull Helm Chart"
+        Width="580"
+        MinWidth="480"
+        MinHeight="210"
+        SizeToContent="Height"
+        ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource WindowBackground}"
+        WindowStartupLocation="CenterOwner"
+        Loaded="OnLoaded">
+    <Grid>
+        <Grid Margin="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- ACR auth banner (shown when OCI listing fails due to auth) -->
+            <Border x:Name="AcrAuthBanner"
+                    Grid.Row="0"
+                    Visibility="Collapsed"
+                    Background="#D97706"
+                    CornerRadius="4"
+                    Padding="10,8"
+                    Margin="0,0,0,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="AcrAuthBannerText"
+                               Text="Azure Container Registry authentication required. Re-authenticate to continue."
+                               Foreground="White"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <Button Grid.Column="1"
+                            x:Name="AcrReauthButton"
+                            Content="Re-authenticate"
+                            Margin="10,0,0,0"
+                            Padding="10,4"
+                            Background="White"
+                            Foreground="#D97706"
+                            BorderThickness="0"
+                            FontWeight="SemiBold"
+                            Click="OnAcrReauthClick" />
+                </Grid>
+            </Border>
+
+            <!-- Source row -->
+            <Grid Grid.Row="1" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Chart source" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                <ComboBox Grid.Column="1"
+                          x:Name="SourceCombo"
+                          ItemsSource="{Binding ChartSources}"
+                          DisplayMemberPath="Display"
+                          SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch"
+                          Background="{DynamicResource InputBackground}"
+                          Foreground="{DynamicResource TextPrimary}"
+                          BorderBrush="{DynamicResource InputBorder}"
+                          Margin="10,0,0,0" />
+                <Button Grid.Column="2"
+                        Content="+"
+                        Width="28" Height="26"
+                        Margin="6,0,0,0"
+                        Background="{DynamicResource AccentPositive}"
+                        Foreground="White"
+                        BorderBrush="{DynamicResource ButtonBorder}"
+                        Click="OnAddSourceClick" />
+            </Grid>
+
+            <!-- Chart row -->
+            <Grid Grid.Row="2" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Chart" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                <ComboBox Grid.Column="1"
+                          x:Name="ChartCombo"
+                          ItemsSource="{Binding Charts}"
+                          DisplayMemberPath="Display"
+                          SelectedItem="{Binding SelectedChart, Mode=TwoWay}"
+                          IsEnabled="False"
+                          HorizontalAlignment="Stretch"
+                          Background="{DynamicResource InputBackground}"
+                          Foreground="{DynamicResource TextPrimary}"
+                          BorderBrush="{DynamicResource InputBorder}"
+                          Margin="10,0,0,0" />
+            </Grid>
+
+            <!-- Version row -->
+            <Grid Grid.Row="3" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Version" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                <ComboBox Grid.Column="1"
+                          x:Name="VersionCombo"
+                          ItemsSource="{Binding ChartVersions}"
+                          DisplayMemberPath="Tag"
+                          SelectedItem="{Binding SelectedVersion, Mode=TwoWay}"
+                          IsEnabled="False"
+                          HorizontalAlignment="Stretch"
+                          Background="{DynamicResource InputBackground}"
+                          Foreground="{DynamicResource TextPrimary}"
+                          BorderBrush="{DynamicResource InputBorder}"
+                          Margin="10,0,0,0" />
+            </Grid>
+
+            <!-- Post-pull file association (shown after successful pull) -->
+            <Border x:Name="PostPullSection"
+                    Grid.Row="4"
+                    Visibility="Collapsed"
+                    BorderBrush="{DynamicResource InputBorder}"
+                    BorderThickness="0,1,0,1"
+                    Padding="0,10,0,10"
+                    Margin="0,0,0,10">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="130" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.ColumnSpan="3"
+                               Text="Associate files for future Dekompose runs (optional):"
+                               Foreground="{DynamicResource TextMuted}"
+                               Margin="0,0,0,8" />
+
+                    <TextBlock Grid.Row="1" Text="Values file"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimary}" />
+                    <TextBlock x:Name="ValuesFileLabel"
+                               Grid.Row="1" Grid.Column="1"
+                               Text="None"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextMuted}"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="8,0,8,0" />
+                    <Button Grid.Row="1" Grid.Column="2"
+                            Content="Browse..."
+                            Height="24" Padding="10,0"
+                            Background="{DynamicResource ButtonBackground}"
+                            Foreground="{DynamicResource ButtonForeground}"
+                            BorderBrush="{DynamicResource ButtonBorder}"
+                            Click="OnPostPullBrowseValuesClick" />
+
+                    <TextBlock Grid.Row="2" Text="Dekompose config"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextPrimary}"
+                               Margin="0,8,0,0" />
+                    <TextBlock x:Name="DekomposeConfigLabel"
+                               Grid.Row="2" Grid.Column="1"
+                               Text="None"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextMuted}"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="8,8,8,0" />
+                    <Button Grid.Row="2" Grid.Column="2"
+                            Content="Browse..."
+                            Height="24" Padding="10,0"
+                            Background="{DynamicResource ButtonBackground}"
+                            Foreground="{DynamicResource ButtonForeground}"
+                            BorderBrush="{DynamicResource ButtonBorder}"
+                            Margin="0,8,0,0"
+                            Click="OnPostPullBrowseDekomposeConfigClick" />
+                </Grid>
+            </Border>
+
+            <!-- Buttons -->
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,0">
+                <Button x:Name="CancelButton"
+                        Content="Cancel"
+                        Width="80" Height="28"
+                        Margin="0,0,8,0"
+                        Background="{DynamicResource ButtonBackground}"
+                        Foreground="{DynamicResource ButtonForeground}"
+                        BorderBrush="{DynamicResource ButtonBorder}"
+                        Click="OnCancelClick" />
+                <Button x:Name="PullButton"
+                        Content="Pull Chart"
+                        Height="28" Padding="16,0"
+                        IsEnabled="False"
+                        Background="{DynamicResource AccentPositive}"
+                        Foreground="White"
+                        BorderThickness="0"
+                        FontWeight="SemiBold"
+                        Click="OnPullClick" />
+            </StackPanel>
+
+            <!-- Log viewer -->
+            <ui:LogViewerControl Grid.Row="6"
+                                 LogText="{Binding LogOutput, Mode=OneWay}"
+                                 IsExpanded="{Binding IsLogExpanded, Mode=TwoWay}"
+                                 ClearRequested="OnLogClearRequested" />
+        </Grid>
+
+        <!-- Loading overlay — shown during init and pull -->
+        <ui:LoadingOverlay x:Name="Overlay" Message="Initializing Helm..." />
+    </Grid>
+</Window>

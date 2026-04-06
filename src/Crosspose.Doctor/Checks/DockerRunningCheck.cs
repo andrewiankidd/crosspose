@@ -12,6 +12,7 @@ public sealed class DockerRunningCheck : ICheckFix
     public bool IsAdditional => false;
     public string AdditionalKey => string.Empty;
     public bool CanFix => true;
+    public int CheckIntervalSeconds => 20;
 
     public async Task<CheckResult> RunAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)
     {

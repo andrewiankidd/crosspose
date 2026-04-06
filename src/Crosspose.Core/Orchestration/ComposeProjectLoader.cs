@@ -90,7 +90,8 @@ public static class ComposeProjectLoader
             }
         }
 
-        var projectName = Path.GetFileName(resolvedPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        var projectName = SanitizeComposeProjectName(
+            Path.GetFileName(resolvedPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
 
         return new ComposeProjectLayout(resolvedPath, projectName, windows, linux, cleanup);
     }
@@ -112,6 +113,46 @@ public static class ComposeProjectLoader
         }
 
         throw new DirectoryNotFoundException($"Compose directory '{path}' not found.");
+    }
+
+    /// <summary>
+    /// Normalises a string to a valid Docker/Podman compose project name:
+    /// lowercase alphanumeric, hyphens, and underscores, starting with a letter or digit.
+    /// Dots are replaced with hyphens; other invalid characters are removed.
+    /// </summary>
+    private static string SanitizeComposeProjectName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "crosspose";
+        var chars = name.ToLowerInvariant().Select(c => c == '.' || c == ' ' ? '-' : c);
+        var sanitized = new string(chars.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray()).Trim('-', '_');
+        return string.IsNullOrWhiteSpace(sanitized) ? "crosspose" : sanitized;
+    }
+
+    /// <summary>
+    /// Reads the <c>Project</c> field from a <c>.crosspose-deployment.yml</c> file in the given
+    /// directory, if one exists. Returns null if the file is absent or the field is missing.
+    /// </summary>
+    private static string? ReadDeploymentProjectName(string directory)
+    {
+        var metaFile = Path.Combine(directory, ".crosspose-deployment.yml");
+        if (!File.Exists(metaFile)) return null;
+
+        try
+        {
+            var json = File.ReadAllText(metaFile);
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("Project", out var p))
+            {
+                var name = p.GetString();
+                if (!string.IsNullOrWhiteSpace(name)) return name;
+            }
+        }
+        catch
+        {
+            // best-effort — fall through to directory name
+        }
+
+        return null;
     }
 
     private static IEnumerable<ComposeFileEntry> EnumerateComposeFiles(string directory)

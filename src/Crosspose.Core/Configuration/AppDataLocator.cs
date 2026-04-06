@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Runtime.Versioning;
+using System.Security.Principal;
 
 namespace Crosspose.Core.Configuration;
 
@@ -40,13 +42,27 @@ public static class AppDataLocator
     public static string LocalPath => LocalRoot;
     public static bool IsPortableMode => IsPortable;
 
+    [SupportedOSPlatform("windows")]
+    private static readonly bool IsElevated =
+        new WindowsPrincipal(WindowsIdentity.GetCurrent())
+            .IsInRole(WindowsBuiltInRole.Administrator);
+
+    [SupportedOSPlatform("windows")]
     public static string WithPortableSuffix(string title)
     {
-        if (!IsPortable) return title;
-        if (string.IsNullOrWhiteSpace(title)) return "[Portable Mode]";
-        return title.Contains("[Portable Mode]", StringComparison.OrdinalIgnoreCase)
-            ? title
-            : $"{title} [Portable Mode]";
+        if (string.IsNullOrWhiteSpace(title)) title = "Crosspose";
+
+        if (IsPortable && !title.Contains("[Portable]", StringComparison.OrdinalIgnoreCase))
+        {
+            title = $"{title} [Portable]";
+        }
+
+        if (IsElevated && !title.Contains("[Administrator]", StringComparison.OrdinalIgnoreCase))
+        {
+            title = $"{title} [Administrator]";
+        }
+
+        return title;
     }
 
     public static string GetPreferredFilePath(string relativePath)

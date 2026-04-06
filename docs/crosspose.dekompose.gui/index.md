@@ -5,8 +5,11 @@ This page describes the WPF workflow that wraps Dekompose and how it maps to CLI
 ## Overview
 Crosspose.Dekompose.Gui is a WPF wizard for chart-to-compose conversions. It wraps the same logic as `Crosspose.Dekompose`, but exposes repo selection, values editing, and output options in a single UI.
 
+## Launching with a pre-supplied chart
+Pass `--chart <path>` (or `-c <path>`) to open the app with a local chart tgz pre-loaded. The source browsing section is hidden and conversion can start immediately. This is how **Crosspose.Gui > Charts > Dekompose** launches the app.
+
 ## Repository selection
-On startup the app issues `helm repo update` and populates the repo list from `helm repo list -o json`. You can add/remove repos, refresh metadata, and pick the source for browsing charts.
+On startup (without `--chart`), the app issues `helm repo update` and populates the repo list from `helm repo list -o json`. You can add/remove repos via the shared **Add Chart Source** dialog (from `Crosspose.Ui`), refresh metadata, and pick the source for browsing charts.
 
 ## Chart selection
 The chart picker uses `helm search repo <repo> -o json` to display available charts and versions. The selected chart determines the default output folder name.

@@ -1,4 +1,5 @@
 using Crosspose.Core.Configuration;
+using Crosspose.Core.Deployment;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging;
 using Crosspose.Core.Orchestration;
@@ -61,10 +62,26 @@ case "top":
             var composeOptions = ParseComposeArgs(prefixed);
             return await RunComposeAsync(composeOptions);
         }
+    case "remove":
+        return await RemoveDeployment(remaining);
+    case "deploy":
+        return await DeployAsync(remaining);
+    case "container":
+        return await HandleContainerAsync(remaining);
+    case "images":
+        return await HandleImagesAsync(remaining);
+    case "volumes":
+        return await HandleVolumesAsync(remaining);
+    case "bundles":
+        return await HandleBundlesAsync(remaining);
+    case "deployments":
+        return await HandleDeploymentsAsync(remaining);
+    case "charts":
+        return await HandleChartsAsync(remaining);
     case "sources":
         return await HandleSourcesAsync(remaining);
     default:
-        logger.LogError("Unknown command '{Command}'. Supported commands: ps, compose, up, down, restart, stop, start, logs, top, sources.", command);
+        logger.LogError("Unknown command '{Command}'. Run with --help to see all commands.", command);
         PrintUsage();
         return 1;
 }
@@ -88,25 +105,62 @@ async Task ListContainersAsync(bool includeStopped)
         Console.WriteLine($"{c.HostPlatform,-3} {c.Platform,-8} {Trunc(c.Name,20),-20} {Trunc(c.Image,24),-24} {c.Status}");
     }
 
-    static string Trunc(string value, int max)
-    {
-        if (string.IsNullOrEmpty(value) || value.Length <= max) return value;
-        return value[..(max - 1)] + "…";
-    }
+}
+
+static string Trunc(string value, int max)
+{
+    if (string.IsNullOrEmpty(value) || value.Length <= max) return value;
+    return value[..(max - 1)] + "…";
 }
 
 static void PrintUsage()
 {
     Console.WriteLine("crosspose usage:");
     Console.WriteLine($"  Version: {GetVersion()}");
-    Console.WriteLine("  ps [--all|-a]             Show docker and podman containers side-by-side.");
-    Console.WriteLine("  compose [action] [--dir <path>] [--workload <name>] [-d]  Run compose orchestration across docker + podman.");
-    Console.WriteLine("     Supported actions: up, down, restart, stop, start, logs, top, ps");
-    Console.WriteLine("  sources list              List configured chart sources (Helm & OCI).");
-    Console.WriteLine("  sources add <url> [--user u --pass p]   Detect and add a Helm or OCI chart source.");
-    Console.WriteLine("  sources charts <sourceName>             List charts from a configured source.");
-    Console.WriteLine("  --help                    Show this help text.");
-    Console.WriteLine("  --version, -v             Show version.");
+    Console.WriteLine();
+    Console.WriteLine("Container listing:");
+    Console.WriteLine("  ps [--all|-a]                        List docker + podman containers.");
+    Console.WriteLine();
+    Console.WriteLine("Individual container operations:");
+    Console.WriteLine("  container rm <name>                  Force-remove a container.");
+    Console.WriteLine("  container stop <name>                Stop a running container.");
+    Console.WriteLine("  container start <name>               Start a stopped container.");
+    Console.WriteLine("  container logs <name> [--tail N]     Print container logs.");
+    Console.WriteLine("  container inspect <name>             Print container inspect JSON.");
+    Console.WriteLine();
+    Console.WriteLine("Images:");
+    Console.WriteLine("  images [ls]                          List images across docker + podman.");
+    Console.WriteLine("  images rm <id>                       Force-remove an image.");
+    Console.WriteLine("  images prune                         Remove all unused images.");
+    Console.WriteLine();
+    Console.WriteLine("Volumes:");
+    Console.WriteLine("  volumes [ls]                         List volumes across docker + podman.");
+    Console.WriteLine("  volumes rm <name>                    Remove a volume.");
+    Console.WriteLine("  volumes prune                        Remove all unused volumes.");
+    Console.WriteLine();
+    Console.WriteLine("Compose orchestration (workload level):");
+    Console.WriteLine("  up|down|restart|stop|start|logs|top [--dir <path>] [--workload <name>] [-d]");
+    Console.WriteLine("  compose <action> [--dir <path>] [--workload <name>] [-d] [--project <name>]");
+    Console.WriteLine();
+    Console.WriteLine("Bundles (dekomposed compose zips):");
+    Console.WriteLine("  bundles [list]                       List available bundles.");
+    Console.WriteLine("  bundles rm <name>                    Remove a bundle zip.");
+    Console.WriteLine();
+    Console.WriteLine("Deployments:");
+    Console.WriteLine("  deployments [list]                   List deployed projects.");
+    Console.WriteLine("  deploy <bundle> [--project <name>]   Deploy a bundle to the deployments directory.");
+    Console.WriteLine("  remove --dir <path>                  Delete a deployment directory.");
+    Console.WriteLine();
+    Console.WriteLine("Helm charts:");
+    Console.WriteLine("  charts [list]                        List downloaded Helm charts.");
+    Console.WriteLine();
+    Console.WriteLine("Chart sources:");
+    Console.WriteLine("  sources list                         List configured Helm & OCI sources.");
+    Console.WriteLine("  sources add <url> [--user u --pass p]");
+    Console.WriteLine("  sources charts <sourceName>          List charts from a source.");
+    Console.WriteLine();
+    Console.WriteLine("  --help                               Show this help text.");
+    Console.WriteLine("  --version, -v                        Show version.");
 }
 
 static ComposeOptions ParseComposeArgs(string[] cliArgs)
@@ -222,6 +276,16 @@ async Task<int> RunComposeAsync(ComposeOptions composer)
 
         return hasError ? 1 : 0;
     }
+    catch (Exception ex) when (
+        composer.Action != ComposeAction.Up &&
+        (ex is DirectoryNotFoundException || ex is InvalidOperationException) &&
+        ex.Message.Contains("compose", StringComparison.OrdinalIgnoreCase))
+    {
+        // No compose files in the target directory — deployment is already absent, nothing to bring down.
+        logger.LogWarning("No compose files found for {Action} — treating as already done.", composer.Action);
+        Console.WriteLine($"Nothing to {composer.Action.ToCommand()} (no compose files found).");
+        return 0;
+    }
     catch (Exception ex)
     {
         logger.LogError(ex, "Compose execution failed.");
@@ -235,6 +299,363 @@ static bool LaunchedOutsideShell() => !CrossposeEnvironment.IsShellAvailable;
 
 static void PrintVersion() => Console.WriteLine(GetVersion());
 static string GetVersion() => Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
+
+// ── Container ────────────────────────────────────────────────────────────────
+
+async Task<(ContainerProcessInfo? info, string qualifiedId)> ResolveContainerAsync(string nameOrId)
+{
+    var all = await combined.GetContainersDetailedAsync(includeAll: true);
+    var match = all.FirstOrDefault(c =>
+        c.Name.Equals(nameOrId, StringComparison.OrdinalIgnoreCase) ||
+        c.Id.Equals(nameOrId, StringComparison.OrdinalIgnoreCase) ||
+        c.Id.StartsWith(nameOrId, StringComparison.OrdinalIgnoreCase));
+    if (match is null) return (null, string.Empty);
+    return (match, $"{match.Platform}:{match.Id}");
+}
+
+async Task<int> HandleContainerAsync(string[] opts)
+{
+    if (opts.Length == 0)
+    {
+        Console.WriteLine("container requires a subcommand: start, stop, rm, logs, inspect");
+        return 1;
+    }
+    var sub = opts[0].ToLowerInvariant();
+    var rest = opts.Skip(1).ToArray();
+    var name = rest.FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(name))
+    {
+        Console.WriteLine($"container {sub} requires a container name or id.");
+        return 1;
+    }
+
+    var (info, qualifiedId) = await ResolveContainerAsync(name);
+    if (info is null)
+    {
+        Console.WriteLine($"Container not found: {name}");
+        return 1;
+    }
+
+    switch (sub)
+    {
+        case "start":
+            return await combined.StartContainerAsync(qualifiedId) ? 0 : 1;
+        case "stop":
+            return await combined.StopContainerAsync(qualifiedId) ? 0 : 1;
+        case "rm":
+        case "remove":
+            var ok = await combined.RemoveContainerAsync(qualifiedId);
+            if (ok) Console.WriteLine($"Removed: {info.Name}");
+            else Console.WriteLine($"Failed to remove: {info.Name}");
+            return ok ? 0 : 1;
+        case "logs":
+        {
+            var tail = 500;
+            var tailArg = rest.SkipWhile(a => a != "--tail").Skip(1).FirstOrDefault();
+            if (tailArg is not null) int.TryParse(tailArg, out tail);
+            var result = await combined.GetContainerLogsAsync(qualifiedId, tail);
+            if (!string.IsNullOrWhiteSpace(result.StandardOutput)) Console.WriteLine(result.StandardOutput.TrimEnd());
+            if (!string.IsNullOrWhiteSpace(result.StandardError)) Console.Error.WriteLine(result.StandardError.TrimEnd());
+            return result.IsSuccess ? 0 : 1;
+        }
+        case "inspect":
+        {
+            var result = await combined.InspectContainerAsync(qualifiedId);
+            Console.WriteLine(result is null ? "{}" : System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+        default:
+            Console.WriteLine($"Unknown container subcommand '{sub}'. Use: start, stop, rm, logs, inspect");
+            return 1;
+    }
+}
+
+// ── Images ───────────────────────────────────────────────────────────────────
+
+async Task<int> HandleImagesAsync(string[] opts)
+{
+    var sub = opts.Length > 0 ? opts[0].ToLowerInvariant() : "ls";
+    switch (sub)
+    {
+        case "ls":
+        case "list":
+        {
+            var images = await combined.GetImagesDetailedAsync();
+            Console.WriteLine($"{"PLATFORM",-10} {"REPOSITORY",-40} {"TAG",-20} {"ID",-14} SIZE");
+            foreach (var img in images)
+            {
+                var repo = img.Name ?? "<none>";
+                var tag = img.Tag ?? "<none>";
+                var id = (img.Id ?? string.Empty).Replace("sha256:", "")[..Math.Min(12, (img.Id ?? "").Replace("sha256:", "").Length)];
+                Console.WriteLine($"{img.HostPlatform,-10} {Trunc(repo, 40),-40} {Trunc(tag, 20),-20} {id,-14} {img.Size}");
+            }
+            return 0;
+        }
+        case "rm":
+        case "remove":
+        {
+            var id = opts.Length > 1 ? opts[1] : null;
+            if (string.IsNullOrWhiteSpace(id)) { Console.WriteLine("images rm <id>"); return 1; }
+            var images = await combined.GetImagesDetailedAsync();
+            var match = images.FirstOrDefault(i =>
+                (i.Id ?? string.Empty).StartsWith(id, StringComparison.OrdinalIgnoreCase) ||
+                (i.Id ?? string.Empty).Replace("sha256:", "").StartsWith(id, StringComparison.OrdinalIgnoreCase) ||
+                $"{i.Name}:{i.Tag}".Equals(id, StringComparison.OrdinalIgnoreCase));
+            if (match is null) { Console.WriteLine($"Image not found: {id}"); return 1; }
+            var qualifiedId = $"{match.Platform}:{match.Id}";
+            var ok = await combined.RemoveImageAsync(qualifiedId);
+            Console.WriteLine(ok ? $"Removed: {match.Name}:{match.Tag}" : $"Failed to remove: {id}");
+            return ok ? 0 : 1;
+        }
+        case "prune":
+        {
+            Console.Write("Remove all unused images from docker and podman? (y/N): ");
+            if (!string.Equals(Console.ReadLine(), "y", StringComparison.OrdinalIgnoreCase)) return 0;
+            var ok = await combined.PruneImagesAsync();
+            Console.WriteLine(ok ? "Done." : "Prune failed (partial).");
+            return ok ? 0 : 1;
+        }
+        default:
+            Console.WriteLine("images: ls | rm <id> | prune");
+            return 1;
+    }
+}
+
+// ── Volumes ───────────────────────────────────────────────────────────────────
+
+async Task<int> HandleVolumesAsync(string[] opts)
+{
+    var sub = opts.Length > 0 ? opts[0].ToLowerInvariant() : "ls";
+    switch (sub)
+    {
+        case "ls":
+        case "list":
+        {
+            var volumes = await combined.GetVolumesDetailedAsync();
+            Console.WriteLine($"{"PLATFORM",-10} {"NAME",-50} SIZE");
+            foreach (var vol in volumes)
+                Console.WriteLine($"{vol.HostPlatform,-10} {Trunc(vol.Name, 50),-50} {vol.Size}");
+            return 0;
+        }
+        case "rm":
+        case "remove":
+        {
+            var name = opts.Length > 1 ? opts[1] : null;
+            if (string.IsNullOrWhiteSpace(name)) { Console.WriteLine("volumes rm <name>"); return 1; }
+            var volumes = await combined.GetVolumesDetailedAsync();
+            var match = volumes.FirstOrDefault(v => v.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (match is null) { Console.WriteLine($"Volume not found: {name}"); return 1; }
+            var qualifiedName = $"{match.Platform}:{match.Name}";
+            var ok = await combined.RemoveVolumeAsync(qualifiedName);
+            Console.WriteLine(ok ? $"Removed: {match.Name}" : $"Failed to remove: {name}");
+            return ok ? 0 : 1;
+        }
+        case "prune":
+        {
+            Console.Write("Remove all unused volumes from docker and podman? (y/N): ");
+            if (!string.Equals(Console.ReadLine(), "y", StringComparison.OrdinalIgnoreCase)) return 0;
+            var ok = await combined.PruneVolumesAsync();
+            Console.WriteLine(ok ? "Done." : "Prune failed (partial).");
+            return ok ? 0 : 1;
+        }
+        default:
+            Console.WriteLine("volumes: ls | rm <name> | prune");
+            return 1;
+    }
+}
+
+// ── Bundles ───────────────────────────────────────────────────────────────────
+
+async Task<int> HandleBundlesAsync(string[] opts)
+{
+    var sub = opts.Length > 0 ? opts[0].ToLowerInvariant() : "list";
+    switch (sub)
+    {
+        case "ls":
+        case "list":
+        {
+            var outputDir = CrossposeEnvironment.OutputDirectory;
+            if (!Directory.Exists(outputDir)) { Console.WriteLine("No bundles."); return 0; }
+            var zips = Directory.GetFiles(outputDir, "*.zip")
+                .OrderByDescending(File.GetLastWriteTime)
+                .ToList();
+            if (zips.Count == 0) { Console.WriteLine("No bundles."); return 0; }
+            Console.WriteLine($"{"NAME",-60} MODIFIED");
+            foreach (var z in zips)
+                Console.WriteLine($"{Trunc(Path.GetFileName(z), 60),-60} {File.GetLastWriteTime(z):yyyy-MM-dd HH:mm}");
+            return 0;
+        }
+        case "rm":
+        case "remove":
+        {
+            var name = opts.Length > 1 ? opts[1] : null;
+            if (string.IsNullOrWhiteSpace(name)) { Console.WriteLine("bundles rm <name>"); return 1; }
+            var outputDir = CrossposeEnvironment.OutputDirectory;
+            var target = name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                ? Path.Combine(outputDir, name)
+                : Path.Combine(outputDir, name + ".zip");
+            if (!File.Exists(target)) { Console.WriteLine($"Bundle not found: {name}"); return 1; }
+            File.Delete(target);
+            Console.WriteLine($"Removed: {Path.GetFileName(target)}");
+            return 0;
+        }
+        default:
+            Console.WriteLine("bundles: list | rm <name>");
+            return 1;
+    }
+}
+
+// ── Deployments ───────────────────────────────────────────────────────────────
+
+async Task<int> HandleDeploymentsAsync(string[] opts)
+{
+    var sub = opts.Length > 0 ? opts[0].ToLowerInvariant() : "list";
+    if (sub is "ls" or "list")
+    {
+        var deployDir = CrossposeEnvironment.DeploymentDirectory;
+        if (!Directory.Exists(deployDir)) { Console.WriteLine("No deployments."); return 0; }
+        var projects = Directory.GetDirectories(deployDir).OrderBy(p => p);
+        var any = false;
+        Console.WriteLine($"{"PROJECT / VERSION",-60} PATH");
+        foreach (var proj in projects)
+        {
+            foreach (var ver in Directory.GetDirectories(proj).OrderByDescending(v => v))
+            {
+                any = true;
+                var label = $"{Path.GetFileName(proj)}/{Path.GetFileName(ver)}";
+                Console.WriteLine($"{Trunc(label, 60),-60} {ver}");
+            }
+        }
+        if (!any) Console.WriteLine("No deployments.");
+        return 0;
+    }
+    Console.WriteLine("deployments: list");
+    await Task.CompletedTask;
+    return 1;
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+
+async Task<int> HandleChartsAsync(string[] opts)
+{
+    var sub = opts.Length > 0 ? opts[0].ToLowerInvariant() : "list";
+    if (sub is "ls" or "list")
+    {
+        var chartsDir = CrossposeEnvironment.HelmChartsDirectory;
+        if (!Directory.Exists(chartsDir)) { Console.WriteLine("No charts."); return 0; }
+        var files = Directory.GetFiles(chartsDir)
+            .OrderBy(f => f)
+            .ToList();
+        if (files.Count == 0) { Console.WriteLine("No charts."); return 0; }
+        Console.WriteLine($"{"NAME",-60} MODIFIED");
+        foreach (var f in files)
+            Console.WriteLine($"{Trunc(Path.GetFileName(f), 60),-60} {File.GetLastWriteTime(f):yyyy-MM-dd HH:mm}");
+        return 0;
+    }
+    Console.WriteLine("charts: list");
+    await Task.CompletedTask;
+    return 1;
+}
+
+async Task<int> RemoveDeployment(string[] opts)
+{
+    var q = new Queue<string>(opts);
+    string? dir = null;
+    while (q.Count > 0)
+    {
+        var t = q.Dequeue();
+        if (t is "--dir" or "--directory" && q.Count > 0)
+            dir = q.Dequeue();
+    }
+    if (string.IsNullOrWhiteSpace(dir))
+    {
+        Console.WriteLine("remove requires --dir <path>");
+        return 1;
+    }
+    var fullPath = Path.GetFullPath(dir);
+    if (!Directory.Exists(fullPath))
+    {
+        Console.WriteLine($"Directory not found: {fullPath}");
+        return 1;
+    }
+    // Docker releases bind-mount file handles asynchronously after compose down.
+    // Retry for up to 30 seconds to handle transient locks on e.g. secrets files.
+    for (var attempt = 0; attempt < 10; attempt++)
+    {
+        try
+        {
+            Directory.Delete(fullPath, recursive: true);
+            break;
+        }
+        catch (IOException) when (attempt < 9)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+        }
+    }
+    Console.WriteLine($"Removed: {fullPath}");
+    return 0;
+}
+
+async Task<int> DeployAsync(string[] opts)
+{
+    var q = new Queue<string>(opts);
+    string? source = null;
+    string? project = null;
+    string? version = null;
+    while (q.Count > 0)
+    {
+        var t = q.Dequeue();
+        switch (t)
+        {
+            case "--project": project = q.Count > 0 ? q.Dequeue() : project; break;
+            case "--version": version = q.Count > 0 ? q.Dequeue() : version; break;
+            default:
+                if (source is null && !t.StartsWith("--")) source = t;
+                break;
+        }
+    }
+    if (string.IsNullOrWhiteSpace(source))
+    {
+        Console.WriteLine("deploy requires a source path (zip file or directory).");
+        Console.WriteLine("  crosspose deploy <bundle.zip> [--project <name>] [--version <v>]");
+        return 1;
+    }
+    var fullSource = Path.GetFullPath(source);
+    if (!File.Exists(fullSource) && !Directory.Exists(fullSource))
+    {
+        Console.WriteLine($"Source not found: {fullSource}");
+        return 1;
+    }
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        var stem = Path.GetFileNameWithoutExtension(fullSource);
+        // Strip trailing -<epoch> segment: the folder name is <name>-<version>-<label>-<epoch>
+        var lastHyphen = stem.LastIndexOf('-');
+        project = lastHyphen > 0 && long.TryParse(stem[(lastHyphen + 1)..], out _)
+            ? stem[..lastHyphen]
+            : stem;
+    }
+    try
+    {
+        var deployService = new DefinitionDeploymentService();
+        var result = await deployService.PrepareAsync(new DefinitionDeploymentRequest
+        {
+            SourcePath = fullSource,
+            BaseDirectory = CrossposeEnvironment.DeploymentDirectory,
+            ProjectName = project,
+            Version = version
+        });
+        Console.WriteLine($"Deployed to: {result.TargetPath}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Deploy failed.");
+        Console.WriteLine($"Deploy failed: {ex.Message}");
+        return 1;
+    }
+}
 
 async Task<int> HandleSourcesAsync(string[] cliArgs)
 {
