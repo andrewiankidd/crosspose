@@ -11,9 +11,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crosspose.Cli", "src\Crossp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crosspose.Gui", "src\Crosspose.Gui\Crosspose.Gui.csproj", "{3020ACD7-9C11-438B-8561-964ADA93685B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crosspose.Dekompose", "src\Crosspose.Dekompose\Crosspose.Dekompose.csproj", "{F7D966DF-A070-4374-93BC-D9AF8EAF7AFD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crosspose.Dekompose.Core", "src\Crosspose.Dekompose.Core\Crosspose.Dekompose.Core.csproj", "{F7D966DF-A070-4374-93BC-D9AF8EAF7AFD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crosspose.Doctor", "src\Crosspose.Doctor\Crosspose.Doctor.csproj", "{8E311C11-B976-4357-A9C6-76531FDCD1BC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crosspose.Doctor.Core", "src\Crosspose.Doctor.Core\Crosspose.Doctor.Core.csproj", "{8E311C11-B976-4357-A9C6-76531FDCD1BC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Crosspose.Doctor.Gui", "src\Crosspose.Doctor.Gui\Crosspose.Doctor.Gui.csproj", "{341ABBC5-B1CF-482B-BC63-FE5C86A290D4}"
 EndProject

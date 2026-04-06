@@ -1,4 +1,4 @@
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 
 namespace Crosspose.Doctor.Tests.Checks;
 

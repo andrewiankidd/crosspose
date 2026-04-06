@@ -5,7 +5,7 @@ using Crosspose.Core.Logging;
 using Crosspose.Core.Orchestration;
 using Crosspose.Core.Sources;
 using Microsoft.Extensions.Logging;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 using System.Reflection;
 
 if (LaunchedOutsideShell())

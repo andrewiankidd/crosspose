@@ -96,7 +96,7 @@ View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, 
 
 `PortProxyCheck.FixAsync` adds `netsh advfirewall firewall add rule` on every fix run but never checks if the rule already exists. Firewall `add` silently creates duplicates (unlike portproxy `add` which updates). Over time, hundreds of identical rules accumulate. The fix should check for existing rules by name before adding, or delete-then-add.
 
-**File**: `src/Crosspose.Doctor/Checks/PortProxyCheck.cs:119-134`
+**File**: `src/Crosspose.Doctor.Core/Checks/PortProxyCheck.cs:119-134`
 
 ---
 
@@ -106,7 +106,7 @@ Previously both used `wsl -- ss -tlnp` which queries the DEFAULT WSL distro (e.g
 
 The `netstat` output format differs from `ss` — column indices for local address are different. Parser now uses flexible token matching instead of fixed column index.
 
-**Files**: `src/Crosspose.Doctor/Checks/StalePortProxyCheck.cs`, `src/Crosspose.Core/Networking/PortProxyApplicator.cs`
+**Files**: `src/Crosspose.Doctor.Core/Checks/StalePortProxyCheck.cs`, `src/Crosspose.Core/Networking/PortProxyApplicator.cs`
 
 ---
 
@@ -114,4 +114,4 @@ The `netstat` output format differs from `ss` — column indices for local addre
 
 `ComposeGenerator.GetNextHostPort()` previously allocated from 60000-65000, which overlaps with the Windows dynamic port range (49152-65535). Ports in this range may be reserved by Windows and unavailable for WSL port forwarding. Fixed 2026-04-06 to use 30000-39999. Infra ports use 40000-49999 (already safe).
 
-**File**: `src/Crosspose.Dekompose/Services/ComposeGenerator.cs:1044`
+**File**: `src/Crosspose.Dekompose.Core/Services/ComposeGenerator.cs:1044`

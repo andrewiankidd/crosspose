@@ -14,7 +14,7 @@ using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Sources;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 using Crosspose.Ui;
 
 namespace Crosspose.Dekompose.Gui;
