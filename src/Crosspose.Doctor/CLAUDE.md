@@ -15,18 +15,20 @@ bool IsAdditional { get; }
 string AdditionalKey { get; }
 bool CanFix { get; }
 bool RequiresConnectivity { get; }   // default: false — override to true for Azure/network checks
+bool AutoFix { get; }                // default: false — when true, DoctorMonitor fixes automatically
+int CheckIntervalSeconds { get; }    // default: 60 — background re-check interval
 Task<CheckResult> RunAsync(ProcessRunner, ILogger, CancellationToken);
 Task<FixResult> FixAsync(ProcessRunner, ILogger, CancellationToken);
 ```
 
 ## Built-in Checks (CheckCatalog order)
 
-DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli (RequiresConnectivity).
+DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli (RequiresConnectivity), PodmanHealthcheckRunner (AutoFix), PodmanCreatedContainer (AutoFix), PodmanContainerAutoheal (AutoFix), WslToWindowsFirewall (AutoFix).
 
 ## Additional Checks (enabled via config or `--enable-additional`)
 
-- `azure-acr-auth-win:<registry>` / `azure-acr-auth-lin:<registry>` — ACR auth for Windows/Linux (RequiresConnectivity).
-- `port-proxy:<listenPort>:<connectPort>@<network>` — Windows `netsh` port proxy for Docker↔WSL bridging.
+- `azure-acr-auth-win:<registry>` / `azure-acr-auth-lin:<registry>` — ACR auth for Windows/Linux (RequiresConnectivity, AutoFix).
+- `port-proxy:<listenPort>:<connectPort>@<network>` — Windows `netsh` port proxy for Docker↔WSL bridging (AutoFix).
 
 ## Offline Mode
 
@@ -38,8 +40,9 @@ DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNet
 2. Add to the list in `CheckCatalog.LoadAll()`.
 3. If it's an additional check, set `IsAdditional = true` and provide an `AdditionalKey`.
 4. If it needs network/cloud, add `public bool RequiresConnectivity => true;`.
+5. If DoctorMonitor should auto-fix it, add `public bool AutoFix => true;`.
 
 ## Dependencies
 
-- `Crosspose.Core` — for `ProcessRunner`, `CrossposeEnvironment`, `AppDataLocator`.
+- `Crosspose.Core` — for `ProcessRunner`, `CrossposeEnvironment`, `AppDataLocator`, `WslHostResolver`.
 - `YamlDotNet`, `Tomlyn` — for config/manifest parsing.
