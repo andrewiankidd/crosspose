@@ -81,9 +81,6 @@ public sealed class PortProxyCheck : ICheckFix
 
     public async Task<FixResult> FixAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)
     {
-        if (!PortProxyApplicator.IsElevated)
-            return FixResult.Failure("Administrator privileges are required to configure port proxies. Re-run as administrator or use the Fix button.");
-
         var natAddresses = await ResolveNatGatewayAddressesAsync(runner, cancellationToken);
         if (!natAddresses.Any())
         {
@@ -108,7 +105,7 @@ public sealed class PortProxyCheck : ICheckFix
         {
             var addProxyArgs =
                 $"interface portproxy add v4tov4 listenaddress={address} listenport={_listenPort} connectaddress=127.0.0.1 connectport={_connectPort}";
-            var proxyResult = await runner.RunAsync("netsh", addProxyArgs, cancellationToken: cancellationToken);
+            var proxyResult = await runner.RunElevatedAsync("netsh", addProxyArgs, cancellationToken);
             if (!proxyResult.IsSuccess && !ContainsAlreadyExists(proxyResult))
             {
                 var error = string.IsNullOrWhiteSpace(proxyResult.StandardError)
@@ -125,7 +122,7 @@ public sealed class PortProxyCheck : ICheckFix
             var ruleName = $"port-proxy-{_listenPort}-{sanitizedAddress}";
             var addRuleArgs =
                 $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localip={address} localport={_listenPort}";
-            var ruleResult = await runner.RunAsync("netsh", addRuleArgs, cancellationToken: cancellationToken);
+            var ruleResult = await runner.RunElevatedAsync("netsh", addRuleArgs, cancellationToken);
             if (!ruleResult.IsSuccess && !ContainsAlreadyExists(ruleResult))
             {
                 var error = string.IsNullOrWhiteSpace(ruleResult.StandardError)

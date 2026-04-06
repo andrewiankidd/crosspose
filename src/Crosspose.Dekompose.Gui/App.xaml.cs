@@ -8,6 +8,7 @@ public partial class App : Application
     public static string? InitialChartPath { get; private set; }
     public static string? InitialValuesPath { get; private set; }
     public static string? InitialDekomposeConfigPath { get; private set; }
+    public static bool AutoRun { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -53,6 +54,9 @@ public partial class App : Application
                     break;
                 case "--remap-ports":
                     remapPorts = true;
+                    break;
+                case "--auto-run":
+                    AutoRun = true;
                     break;
             }
         }

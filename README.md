@@ -23,10 +23,12 @@ See [docs/](docs/) for user-facing documentation.
 
 ## Quick start
 
-Prefer the GUI:
+Prefer the GUI — **run elevated** so Doctor can auto-configure port proxies and restart services without per-operation UAC prompts:
 ```powershell
-dotnet run --project src/Crosspose.Gui
+Start-Process powershell -Verb RunAs -ArgumentList '-NoExit','-Command','dotnet run --project src/Crosspose.Gui'
 ```
+
+Without elevation, Crosspose still works but Doctor fixes that need admin (port proxy rules, service restarts) will prompt UAC individually.
 
 If you prefer CLI:
 ```powershell

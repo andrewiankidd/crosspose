@@ -40,11 +40,30 @@ public sealed class AzureAcrAuthWinCheck : ICheckFix
         if (string.IsNullOrWhiteSpace(token))
             return CheckResult.Failure($"Empty ACR token returned for {_registryName}.");
 
-        // Also verify the token is written and valid in Docker's config.json.
+        // Verify Docker has credentials — either in config.json auths or in the credential store.
         var host = $"{_registryName}.azurecr.io";
         var dockerToken = ReadDockerAuthToken(host);
         if (dockerToken is null)
-            return CheckResult.Failure($"Docker config has no credentials for {host}. Run Fix to write them.");
+        {
+            // config.json may not have the token if Docker uses a credential store (credsStore).
+            // Check the credential store directly.
+            var store = ReadDockerCredsStore();
+            if (!string.IsNullOrWhiteSpace(store))
+            {
+                var helperCheck = await runner.RunAsync(
+                    $"docker-credential-{store}", "list",
+                    cancellationToken: cancellationToken);
+                if (helperCheck.IsSuccess &&
+                    helperCheck.StandardOutput.Contains(host, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Credential store has it — skip the config.json check
+                    dockerToken = token; // use the az-provided token for expiry check
+                }
+            }
+
+            if (dockerToken is null)
+                return CheckResult.Failure($"Docker has no credentials for {host}. Run Fix to write them.");
+        }
 
         if (AuthTokenInspector.TryGetExpiration(dockerToken, out var dockerExpiration) &&
             AuthTokenInspector.IsExpired(dockerExpiration))
@@ -54,10 +73,30 @@ public sealed class AzureAcrAuthWinCheck : ICheckFix
         {
             if (AuthTokenInspector.IsExpired(expiration))
                 return CheckResult.Failure($"ACR token for {_registryName} expired at {expiration:u}.");
-            return CheckResult.Success($"ACR token valid (expires {expiration:u}).");
         }
 
-        return CheckResult.Success($"ACR token retrieved for {_registryName}.");
+        // Verify Docker can actually authenticate to the registry, not just that
+        // config.json has a token. Docker Desktop may use a credential store (credsStore)
+        // that ignores config.json auths entirely. Query the credential helper directly.
+        var credsStore = ReadDockerCredsStore();
+        if (!string.IsNullOrWhiteSpace(credsStore))
+        {
+            var helperName = $"docker-credential-{credsStore}";
+            var helperCheck = await runner.RunAsync(
+                helperName, "list",
+                cancellationToken: cancellationToken);
+            if (helperCheck.IsSuccess &&
+                !helperCheck.StandardOutput.Contains(host, StringComparison.OrdinalIgnoreCase))
+            {
+                return CheckResult.Failure(
+                    $"Docker credential store '{credsStore}' has no login for {host}. " +
+                    "Run Fix to update both config.json and the credential store.");
+            }
+        }
+
+        return CheckResult.Success(expiration != default
+            ? $"ACR token valid (expires {expiration:u})."
+            : $"ACR token retrieved for {_registryName}.");
     }
 
     public async Task<string?> GetAccessTokenAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)
@@ -81,9 +120,43 @@ public sealed class AzureAcrAuthWinCheck : ICheckFix
         var token = await GetAccessTokenAsync(runner, logger, cancellationToken);
         if (string.IsNullOrWhiteSpace(token))
         {
-            return FixResult.Failure(
-                "Failed to acquire ACR token. Ensure you are logged in to Azure CLI (az login) " +
-                "and have pull access to the registry.");
+            // Token acquisition failed — likely expired MFA. Launch interactive az login
+            // with UseShellExecute so the browser opens for re-authentication.
+            logger.LogInformation("ACR token acquisition failed, launching interactive az login...");
+            var azCmd = await GetAzCommandAsync(runner, cancellationToken);
+            try
+            {
+                var loginProcess = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = azCmd,
+                        Arguments = "login",
+                        UseShellExecute = true,
+                        CreateNoWindow = false,
+                    }
+                };
+                loginProcess.Start();
+                await loginProcess.WaitForExitAsync(cancellationToken);
+
+                if (loginProcess.ExitCode != 0)
+                    return FixResult.Failure("Interactive az login failed or was cancelled.");
+
+                // Retry token acquisition after interactive login
+                token = await GetAccessTokenAsync(runner, logger, cancellationToken);
+                if (string.IsNullOrWhiteSpace(token))
+                    return FixResult.Failure(
+                        "Failed to acquire ACR token even after interactive login. " +
+                        "Ensure you have pull access to the registry.");
+            }
+            catch (OperationCanceledException)
+            {
+                return FixResult.Failure("Interactive az login was cancelled.");
+            }
+            catch (Exception ex)
+            {
+                return FixResult.Failure($"Failed to launch interactive az login: {ex.Message}");
+            }
         }
 
         var host = $"{_registryName}.azurecr.io";
@@ -97,6 +170,24 @@ public sealed class AzureAcrAuthWinCheck : ICheckFix
         catch (Exception ex)
         {
             return FixResult.Failure($"Failed to write Docker auth config: {ex.Message}");
+        }
+
+        // Also run docker login directly — Docker Desktop may use a credential store
+        // (credsStore) that overrides config.json auths. docker login writes to
+        // whatever store Docker is configured to use.
+        var dockerLogin = await runner.RunAsync(
+            "docker",
+            $"login {host} -u 00000000-0000-0000-0000-000000000000 --password-stdin",
+            stdin: token,
+            cancellationToken: cancellationToken);
+        if (dockerLogin.IsSuccess)
+        {
+            logger.LogInformation("Docker login succeeded for {Host}", host);
+        }
+        else
+        {
+            logger.LogWarning("Docker login failed for {Host}: {Error} — falling back to config.json auth",
+                host, dockerLogin.StandardError.Trim());
         }
 
         var verify = await RunAsync(runner, logger, cancellationToken);
@@ -135,6 +226,28 @@ public sealed class AzureAcrAuthWinCheck : ICheckFix
             // format: "00000000-0000-0000-0000-000000000000:<token>"
             var colon = decoded.IndexOf(':');
             return colon >= 0 ? decoded[(colon + 1)..] : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the "credsStore" value from ~/.docker/config.json (e.g. "desktop", "wincred").
+    /// Returns null if not configured or config doesn't exist.
+    /// </summary>
+    private static string? ReadDockerCredsStore()
+    {
+        try
+        {
+            var configPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".docker", "config.json");
+            if (!File.Exists(configPath)) return null;
+
+            var root = JsonNode.Parse(File.ReadAllText(configPath))?.AsObject();
+            return root?["credsStore"]?.GetValue<string>();
         }
         catch
         {

@@ -49,11 +49,6 @@ public static class PortProxyApplicator
         ILogger logger,
         CancellationToken cancellationToken = default)
     {
-        if (!IsElevated)
-        {
-            return PortProxyApplyResult.ElevationRequired();
-        }
-
         var config = CrossposeConfigurationStore.Load();
         var checks = config.Doctor?.AdditionalChecks ?? new List<string>();
 
@@ -98,7 +93,7 @@ public static class PortProxyApplicator
             foreach (var address in missingProxy)
             {
                 var args = $"interface portproxy add v4tov4 listenaddress={address} listenport={req.ListenPort} connectaddress=127.0.0.1 connectport={req.ConnectPort}";
-                var result = await runner.RunAsync("netsh", args, cancellationToken: cancellationToken);
+                var result = await runner.RunElevatedAsync("netsh", args, cancellationToken);
                 if (!result.IsSuccess && !ContainsAlreadyExists(result))
                 {
                     var err = (string.IsNullOrWhiteSpace(result.StandardError) ? result.StandardOutput : result.StandardError).Trim();
@@ -116,7 +111,7 @@ public static class PortProxyApplicator
             {
                 var ruleName = $"port-proxy-{req.ListenPort}-{address.Replace('.', '-')}";
                 var fwArgs = $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localip={address} localport={req.ListenPort}";
-                var fwResult = await runner.RunAsync("netsh", fwArgs, cancellationToken: cancellationToken);
+                var fwResult = await runner.RunElevatedAsync("netsh", fwArgs, cancellationToken);
                 if (!fwResult.IsSuccess && !ContainsAlreadyExists(fwResult))
                 {
                     var err = (string.IsNullOrWhiteSpace(fwResult.StandardError) ? fwResult.StandardOutput : fwResult.StandardError).Trim();
@@ -157,7 +152,7 @@ public static class PortProxyApplicator
         foreach (var rule in candidates.Where(r => !wslListeners.Contains(r.ConnectPort)))
         {
             var delArgs = $"interface portproxy delete v4tov4 listenaddress={rule.ListenAddress} listenport={rule.ListenPort}";
-            var result = await runner.RunAsync("netsh", delArgs, cancellationToken: cancellationToken);
+            var result = await runner.RunElevatedAsync("netsh", delArgs, cancellationToken);
             if (result.IsSuccess)
             {
                 logger.LogInformation("Removed stale portproxy rule {Address}:{Port}→{ConnectPort}", rule.ListenAddress, rule.ListenPort, rule.ConnectPort);
