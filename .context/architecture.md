@@ -17,7 +17,9 @@ Crosspose.sln
     ├── Crosspose.Gui/               # WPF exe — main dashboard
     ├── Crosspose.Core.Tests/        # xUnit tests for Core
     ├── Crosspose.Doctor.Tests/      # xUnit tests for Doctor
-    └── Crosspose.Dekompose.Tests/   # xUnit tests for Dekompose
+    ├── Crosspose.Dekompose.Tests/   # xUnit tests for Dekompose
+    ├── Crosspose.Integration.Tests/ # end-to-end tests (hello world chart)
+    └── Crosspose.TestShim/          # shared test helpers (process/runner fakes)
 ```
 
 ## Naming Convention

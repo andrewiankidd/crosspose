@@ -12,3 +12,4 @@ Deep context files for LLM-assisted development. Each file is self-contained.
 | [bugs.md](bugs.md) | Confirmed broken behavior |
 | [tech-debt.md](tech-debt.md) | Structural issues to know when working in the codebase |
 | [recommendations.md](recommendations.md) | Prioritized action plan |
+| [roadmap.md](roadmap.md) | Feature ideas: UX polish, dev workflow, demo kit, config management, team features |

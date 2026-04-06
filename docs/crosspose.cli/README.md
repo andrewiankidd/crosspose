@@ -1,4 +1,4 @@
-# Crosspose CLI (orchestration)
+# Crosspose.Cli
 
 This page focuses on how the CLI discovers compose projects, splits Windows vs Linux workloads, and feeds execution context to Docker Desktop and Podman.
 
