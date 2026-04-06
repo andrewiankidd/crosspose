@@ -41,13 +41,13 @@ netsh advfirewall firewall add rule name="port-proxy-<port>" dir=in action=allow
 Crosspose also injects `NAT_GATEWAY_IP` during `crosspose up` so Docker compose can resolve the gateway automatically. This keeps the Windows container -> Podman service bridge declarative without editing compose outputs manually.
 
 ### Projects (one line each)
-- [Crosspose CLI](crosspose/index.md) - unified ps/compose shim for Docker (Windows) + Podman (WSL). [Repo README](../README.md)
-- [Crosspose.Gui](crosspose.gui/index.md) - WPF frontend for containers/images/volumes and tooling.
-- [Crosspose.Dekompose](crosspose.dekompose/index.md) - CLI: Helm-to-Compose emitter.
-- [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/index.md) - WPF UI to pick chart/repo/values and run Dekompose.
-- [Crosspose.Doctor](crosspose.doctor/index.md) - CLI prerequisite checker with additional checks/fixes.
-- [Crosspose.Doctor.Gui](crosspose.doctor.gui/index.md) - WPF UI for Doctor with inline fix launches.
-- [Crosspose.Core](crosspose.core/index.md) - shared process/helm/platform runners and logging.
+- [Crosspose CLI](crosspose/README.md) - unified ps/compose shim for Docker (Windows) + Podman (WSL). [Repo README](../README.md)
+- [Crosspose.Gui](crosspose.gui/README.md) - WPF frontend for containers/images/volumes and tooling.
+- [Crosspose.Dekompose](crosspose.dekompose/README.md) - CLI: Helm-to-Compose emitter.
+- [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/README.md) - WPF UI to pick chart/repo/values and run Dekompose.
+- [Crosspose.Doctor](crosspose.doctor/README.md) - CLI prerequisite checker with additional checks/fixes.
+- [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md) - WPF UI for Doctor with inline fix launches.
+- [Crosspose.Core](crosspose.core/README.md) - shared process/helm/platform runners and logging.
 - [Configuration](configuration.md) - schema for `crosspose.yml`/`.yaml` and how env vars merge.
 - [Portable mode](configuration.md#portable-mode) - run from a self-contained folder with local `AppData`.
 
@@ -55,4 +55,4 @@ Crosspose also injects `NAT_GATEWAY_IP` during `crosspose up` so Docker compose 
 - Read the [setup guide](setup.md) for prerequisites.
 - Try the [examples](examples.md) to see docker/podman and crosspose side-by-side.
 - Review the [configuration reference](configuration.md) to understand `crosspose.yml`/`.yaml`.
-- Explore project-specific docs: [Crosspose](crosspose/index.md), [Crosspose.Gui](crosspose.gui/index.md), [Crosspose.Dekompose](crosspose.dekompose/index.md), [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/index.md), [Crosspose.Doctor](crosspose.doctor/index.md), [Crosspose.Doctor.Gui](crosspose.doctor.gui/index.md), [Crosspose.Core](crosspose.core/index.md).
+- Explore project-specific docs: [Crosspose](crosspose/README.md), [Crosspose.Gui](crosspose.gui/README.md), [Crosspose.Dekompose](crosspose.dekompose/README.md), [Crosspose.Dekompose.Gui](crosspose.dekompose.gui/README.md), [Crosspose.Doctor](crosspose.doctor/README.md), [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md), [Crosspose.Core](crosspose.core/README.md).

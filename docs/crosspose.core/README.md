@@ -27,5 +27,5 @@ Crosspose.Core provides the shared building blocks used by every CLI and GUI. Th
 - Doctor CLI/GUI (checks and fixes).
 
 ## Related docs
-- [Crosspose](../crosspose/index.md) for orchestration behavior.
-- [Crosspose.Dekompose](../crosspose.dekompose/index.md) for chart rendering.
+- [Crosspose](../crosspose/README.md) for orchestration behavior.
+- [Crosspose.Dekompose](../crosspose.dekompose/README.md) for chart rendering.

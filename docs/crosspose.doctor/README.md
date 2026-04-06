@@ -41,5 +41,5 @@ When `--fix` is supplied (or the GUI Fix button is used), Doctor will:
 - The Crosspose GUIs and Dekompose update this list as you add infra or registries.
 
 ## Related docs
-- [Crosspose.Doctor.Gui](../crosspose.doctor.gui/index.md) for the WPF interface.
+- [Crosspose.Doctor.Gui](../crosspose.doctor.gui/README.md) for the WPF interface.
 - [Setup](../setup.md) for prerequisite installation.

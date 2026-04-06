@@ -62,6 +62,6 @@ The Tools menu provides:
 - Respects `compose.deployment-directory` and `compose.gui.refresh-interval-seconds` from `crosspose.yml`.
 
 ## Related docs
-- [Crosspose CLI](../crosspose/index.md) for orchestration behavior.
-- [Crosspose.Dekompose.Gui](../crosspose.dekompose.gui/index.md) for chart-to-compose UI.
-- [Crosspose.Doctor.Gui](../crosspose.doctor.gui/index.md) for prerequisite checks.
+- [Crosspose CLI](../crosspose/README.md) for orchestration behavior.
+- [Crosspose.Dekompose.Gui](../crosspose.dekompose.gui/README.md) for chart-to-compose UI.
+- [Crosspose.Doctor.Gui](../crosspose.doctor.gui/README.md) for prerequisite checks.
