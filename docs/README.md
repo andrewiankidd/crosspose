@@ -1,7 +1,5 @@
 # Crosspose Documentation
 
-![Crosspose GUI](../assets/screencaps/crosspose-gui-containers-view.png)
-
 Crosspose converts Helm-rendered Kubernetes manifests into Docker Compose stacks and lets you run Windows and Linux containers side-by-side on a single workstation. The toolchain is split into small CLI and WPF apps that share orchestration code so you can script or click through the same flows.
 
 ## Why Crosspose?
@@ -45,14 +43,6 @@ Both directions are automated — `crosspose up` applies port proxies, and Docto
 | [Crosspose.Doctor.Gui](crosspose.doctor.gui/README.md) | WPF | Per-item Fix buttons, Fix All, offline mode |
 | [Crosspose.Gui](crosspose.gui/README.md) | WPF | Main dashboard: Helm Charts, Compose Bundles, Projects, Containers, Images, Volumes |
 | [Crosspose.Ui](crosspose.gui/README.md) | Library | Shared WPF components used by all GUI projects |
-
-## Hello World Demo
-
-The [Cross-Platform Helm Chart Hello World](https://github.com/andrewiankidd/CrossPlatformHelmChartHelloWorld) is a minimal chart that proves out all of Crosspose's features. It deploys a Linux container and a Windows container side-by-side, each validating connectivity to shared infrastructure (MSSQL, Service Bus, Azurite) and to each other across the Docker/WSL boundary.
-
-![Hello World Health Checks](../assets/screencaps/hello-world-browser.png)
-
-Each container serves an HTML status page with green/red indicators. When all four checks pass on both sides, the containers report healthy in the GUI.
 
 ## Reference
 
