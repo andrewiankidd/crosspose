@@ -1,5 +1,5 @@
 using Crosspose.Core.Diagnostics;
-using Crosspose.Dekompose.Services;
+using Crosspose.Dekompose.Core.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Crosspose.Dekompose.Tests.Services;

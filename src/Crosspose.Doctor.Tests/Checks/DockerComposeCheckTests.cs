@@ -1,5 +1,5 @@
 using Crosspose.Core.Diagnostics;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Crosspose.Doctor.Tests.Checks;

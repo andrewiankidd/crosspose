@@ -31,7 +31,7 @@
 ## Naming
 
 - **Projects**: `Crosspose.<Component>` (PascalCase).
-- **Namespaces**: Match project names (`Crosspose.Dekompose.Services`, `Crosspose.Doctor.Checks`).
+- **Namespaces**: Match project names (`Crosspose.Dekompose.Core.Services`, `Crosspose.Doctor.Core.Checks`).
 - **Check names**: Lowercase with hyphens (`"docker-compose"`, `"crosspose-wsl-instance"`).
 - **Platform identifiers**: `"docker"`, `"podman"`, `"wsl-podman"` for Platform; `"win"`, `"lin"` for HostPlatform.
 - **Compose actions**: `ComposeAction` enum: `Up`, `Down`, `Restart`, `Stop`, `Start`, `Logs`, `Top`, `Ps`.

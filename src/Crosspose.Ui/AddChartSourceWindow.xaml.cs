@@ -5,7 +5,7 @@ using System.Windows;
 using Crosspose.Core.Orchestration;
 using Crosspose.Core.Sources;
 using Crosspose.Core.Diagnostics;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core.Checks;
 using Microsoft.Extensions.Logging;
 
 namespace Crosspose.Ui;

@@ -2,8 +2,8 @@ using System.Reflection;
 using Crosspose.Core.Configuration;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging;
-using Crosspose.Doctor.Checks;
-using Crosspose.Doctor;
+using Crosspose.Doctor.Core.Checks;
+using Crosspose.Doctor.Core;
 using Microsoft.Extensions.Logging;
 
 if (LaunchedOutsideShell())
@@ -41,7 +41,7 @@ if (settings.OfflineMode)
 // When --fix is passed, include AutoFix checks so autoheal runs in the script/CLI path too.
 // Without --fix, AutoFix checks are excluded — they depend on persistent state (cooldown
 // counters) that only accumulates correctly in the long-running GUI DoctorMonitor.
-var checks = Crosspose.Doctor.CheckCatalog.LoadAll(enabledAdditionals, offlineMode: settings.OfflineMode)
+var checks = Crosspose.Doctor.Core.CheckCatalog.LoadAll(enabledAdditionals, offlineMode: settings.OfflineMode)
     .Where(c => runFixes || !c.AutoFix)
     .ToList();
 

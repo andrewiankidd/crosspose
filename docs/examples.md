@@ -36,8 +36,8 @@ dotnet run --project src/Crosspose.Cli -- up --dir C:\temp\dekompose-outputs\bun
 ## Dekompose chart-to-compose
 ```powershell
 # Render a chart with values to compose outputs
-dotnet run --project src/Crosspose.Dekompose -- --chart C:\path\to\chart --values C:\path\to\values.yaml --output dekompose-outputs
+dotnet run --project src/Crosspose.Dekompose.Cli -- --chart C:\path\to\chart --values C:\path\to\values.yaml --output dekompose-outputs
 
 # Merge a dekompose.yml before rendering (overrides or extends crosspose.yml)
-dotnet run --project src/Crosspose.Dekompose -- --chart C:\path\to\chart --dekompose-config C:\path\to\dekompose.yml --infra --remap-ports
+dotnet run --project src/Crosspose.Dekompose.Cli -- --chart C:\path\to\chart --dekompose-config C:\path\to\dekompose.yml --infra --remap-ports
 ```

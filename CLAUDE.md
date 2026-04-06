@@ -43,10 +43,10 @@ Ten projects in `src/`, all under `Crosspose.sln`. Libraries hold reusable logic
 | **Crosspose.Core** | Class library | [src/Crosspose.Core/CLAUDE.md](src/Crosspose.Core/CLAUDE.md) |
 | **Crosspose.Ui** | WPF component library | [src/Crosspose.Ui/CLAUDE.md](src/Crosspose.Ui/CLAUDE.md) |
 | **Crosspose.Cli** | CLI exe | [src/Crosspose.Cli/CLAUDE.md](src/Crosspose.Cli/CLAUDE.md) |
-| **Crosspose.Dekompose** | Class library | [src/Crosspose.Dekompose/CLAUDE.md](src/Crosspose.Dekompose/CLAUDE.md) |
+| **Crosspose.Dekompose.Core** | Class library | [src/Crosspose.Dekompose.Core/CLAUDE.md](src/Crosspose.Dekompose.Core/CLAUDE.md) |
 | **Crosspose.Dekompose.Cli** | CLI exe | [src/Crosspose.Dekompose.Cli/CLAUDE.md](src/Crosspose.Dekompose.Cli/CLAUDE.md) |
 | **Crosspose.Dekompose.Gui** | WPF exe | [src/Crosspose.Dekompose.Gui/CLAUDE.md](src/Crosspose.Dekompose.Gui/CLAUDE.md) |
-| **Crosspose.Doctor** | Class library | [src/Crosspose.Doctor/CLAUDE.md](src/Crosspose.Doctor/CLAUDE.md) |
+| **Crosspose.Doctor.Core** | Class library | [src/Crosspose.Doctor.Core/CLAUDE.md](src/Crosspose.Doctor.Core/CLAUDE.md) |
 | **Crosspose.Doctor.Cli** | CLI exe | [src/Crosspose.Doctor.Cli/CLAUDE.md](src/Crosspose.Doctor.Cli/CLAUDE.md) |
 | **Crosspose.Doctor.Gui** | WPF exe | [src/Crosspose.Doctor.Gui/CLAUDE.md](src/Crosspose.Doctor.Gui/CLAUDE.md) |
 | **Crosspose.Gui** | WPF exe | [src/Crosspose.Gui/CLAUDE.md](src/Crosspose.Gui/CLAUDE.md) |
@@ -55,15 +55,15 @@ Ten projects in `src/`, all under `Crosspose.sln`. Libraries hold reusable logic
 
 **Crosspose.Ui** — shared WPF component library. `LogViewerControl`, `AddChartSourceWindow`, `PickChartWindow`, `ChartSourceListItem`, `DoctorCheckPersistence`. References `Crosspose.Core` and `Crosspose.Doctor`.
 
-**Crosspose.Dekompose** — Helm-to-Compose conversion library. `HelmTemplateRunner`, `ComposeGenerator` (YAML → compose files with OS splitting, port remapping, infra scaffolding).
+**Crosspose.Dekompose.Core** — Helm-to-Compose conversion library. `HelmTemplateRunner`, `ComposeGenerator` (YAML → compose files with OS splitting, port remapping, infra scaffolding).
 
 **Crosspose.Dekompose.Cli** — CLI entry point for Dekompose. Parses args, invokes conversion pipeline.
 
-**Crosspose.Dekompose.Gui** — WPF GUI for Dekompose. Chart/repo/values selection, runs conversion, manages chart sources. Accepts `--chart <path>` to open with a pre-supplied tgz.
+**Crosspose.Dekompose.Gui** — WPF GUI for Dekompose.Core. Chart/repo/values selection, runs conversion, manages chart sources. Accepts `--chart <path>` to open with a pre-supplied tgz.
 
 **Crosspose.Cli** — unified CLI. `ps` aggregates docker+podman containers. `compose`/`up`/`down`/`restart`/`stop`/`start`/`logs`/`top`/`ps` orchestrate across both platforms. `sources` manages Helm/OCI chart sources.
 
-**Crosspose.Doctor** — prerequisite check library. `ICheckFix` interface (includes `RequiresConnectivity`, `AutoFix`, `CheckIntervalSeconds` default members), `CheckCatalog` with 21 built-in checks (DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli, PodmanHealthcheckRunner, PodmanCreatedContainer, PodmanContainerAutoheal, WslToWindowsFirewall). Supports additional checks via config. `offlineMode` parameter on `LoadAll` suppresses connectivity-requiring checks.
+**Crosspose.Doctor.Core** — prerequisite check library. `ICheckFix` interface (includes `RequiresConnectivity`, `AutoFix`, `CheckIntervalSeconds` default members), `CheckCatalog` with 21 built-in checks (DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli, PodmanHealthcheckRunner, PodmanCreatedContainer, PodmanContainerAutoheal, WslToWindowsFirewall). Supports additional checks via config. `offlineMode` parameter on `LoadAll` suppresses connectivity-requiring checks.
 
 **Crosspose.Doctor.Cli** — CLI entry point for Doctor. `--fix` triggers remediation. `--enable-additional` for extra checks.
 

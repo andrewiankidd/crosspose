@@ -16,8 +16,8 @@ using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Orchestration;
 using Crosspose.Core.Deployment;
-using Crosspose.Doctor;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core;
+using Crosspose.Doctor.Core.Checks;
 using Crosspose.Ui;
 using Microsoft.Extensions.Logging;
 

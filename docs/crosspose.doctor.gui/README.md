@@ -30,5 +30,5 @@ These are added automatically by Dekompose and the GUIs as needed.
 The log viewer surfaces `Crosspose.Core` diagnostics and the Doctor CLI output for troubleshooting and support capture.
 
 ## Related docs
-- [Crosspose.Doctor](../crosspose.doctor/README.md) for CLI behavior.
+- [Crosspose.Doctor.Core](../crosspose.doctor.core/README.md) for CLI behavior.
 - [Setup](../setup.md) for installing prerequisites.

@@ -1,5 +1,5 @@
-using Crosspose.Doctor;
-using Crosspose.Doctor.Checks;
+using Crosspose.Doctor.Core;
+using Crosspose.Doctor.Core.Checks;
 
 namespace Crosspose.Doctor.Tests;
 
