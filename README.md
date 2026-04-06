@@ -19,6 +19,8 @@ dotnet run --project src/Crosspose.Doctor.Cli -- --fix
 
 ## Quick start (GUI)
 
+![Crosspose GUI](assets/screencaps/crosspose-gui-containers-view.png)
+
 **Run elevated** so Doctor can auto-configure port proxies and restart services without per-operation UAC prompts:
 ```powershell
 Start-Process powershell -Verb RunAs -ArgumentList '-NoExit','-Command','dotnet run --project src/Crosspose.Gui'

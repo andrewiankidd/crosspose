@@ -1,5 +1,7 @@
 # Crosspose Documentation
 
+![Crosspose GUI](../assets/screencaps/crosspose-gui-containers-view.png)
+
 Crosspose converts Helm-rendered Kubernetes manifests into Docker Compose stacks and lets you run Windows and Linux containers side-by-side on a single workstation. The toolchain is split into small CLI and WPF apps that share orchestration code so you can script or click through the same flows.
 
 ## Why Crosspose? (reasoning / disclaimer)
