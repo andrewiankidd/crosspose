@@ -1,0 +1,10 @@
+{
+  "solution": {
+    "path": "Crosspose.sln",
+    "projects": [
+      "src\\Crosspose.Core.Tests\\Crosspose.Core.Tests.csproj",
+      "src\\Crosspose.Doctor.Tests\\Crosspose.Doctor.Tests.csproj",
+      "src\\Crosspose.Dekompose.Tests\\Crosspose.Dekompose.Tests.csproj"
+    ]
+  }
+}
