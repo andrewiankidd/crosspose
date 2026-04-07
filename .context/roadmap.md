@@ -48,11 +48,25 @@ Single view showing CPU%, memory, and health status for all running services acr
 
 **Current gap**: Linux is fully portable — the crosspose-data WSL distro VHD lives at `AppData\crosspose\wsl\crosspose-data\` and travels with the portable folder. Windows (Docker Desktop) images are stored in Docker's own data root (`%LOCALAPPDATA%\Docker\wsl\data\`) and are not covered by the current portable migration.
 
-**Proposed design**:
-- Add a "Save Windows Images" step to `PortableModeWindow` (and as a standalone action in the Images view) that runs `docker save <image> -o AppData\crosspose\images\windows\<sanitised-name>.tar` for each pulled Windows image.
-- On `crosspose up` (and optionally on a new `crosspose images restore` command), before any pull is attempted, check `AppData\crosspose\images\windows\` for a matching `.tar` and run `docker load -i <path>` if found.
-- Load-before-pull should apply even in online mode so the portable copy is always used when available — faster first-run, works offline.
-- The manifest file (`conversion-report.yaml` or a new `image-manifest.json`) declares which images are expected, so the load step knows what to look for without scanning the entire tar directory.
+**Why not `--cache-from type=local`**: That is BuildKit's *build* cache — it caches layer operations during `docker build` and does not apply to pre-built images pulled from a registry. Not relevant here.
+
+**Why not a local registry mirror**: Running a `registry:2` mirror container pre-populated with images and pointing `daemon.json` at `registry-mirrors` would work, but requires a running registry process as part of the portable bundle and a Docker daemon restart to apply. More moving parts than needed.
+
+**No native Docker equivalent**: `--data-root` moves all Docker storage but requires a daemon restart and is managed by Docker Desktop, not an env var. `--registry-mirror` requires a running registry server. `DOCKER_CONFIG` controls auth only. There is no `IMAGE_CACHE_DIR`.
+
+**Design — two Doctor checks + a delete hook**:
+
+The existing Doctor `AutoFix` + `CheckIntervalSeconds` infrastructure handles periodic sync with no new daemon or watcher needed.
+
+*`PortableImageSaveCheck`* — periodically compares `docker images` against `image-manifest.json`. Any image present in Docker but absent from AppData is unsaved. `FixAsync` runs `docker save` for each. `AutoFix = true`.
+
+*`PortableImageLoadCheck`* — periodically compares `.tar` files in `AppData\crosspose\images\windows\` against locally loaded Docker images. Any tar not present in Docker is unloaded. `FixAsync` runs `docker load -i` for each. `AutoFix = true`. This is the fresh-machine bootstrap path — Doctor's AutoFix runs on startup and loads everything before `crosspose up` is ever called.
+
+*Scoping* — both checks should only run in portable mode. Cleanest fit: register them as additional checks (into `doctor.additional-checks`) when portable mode is activated, same pattern as `port-proxy:` and `azure-acr-auth:` checks. They are unregistered if portable mode is disabled.
+
+*Delete hook* — not a Doctor check. When `DockerContainerRunner.RemoveImageAsync` succeeds and portable mode is on, immediately delete the corresponding `.tar` from AppData and remove the entry from `image-manifest.json`. Same applies to `crosspose images rm` in the CLI. This closes the loop: delete in one place, gone everywhere.
+
+*Manifest*: `image-manifest.json` maps `"image:tag" → "filename.tar"` for O(1) lookup. Both checks read and write it as the source of truth.
 
 **Volumes**: Docker volumes live inside Docker's internal VHD and are harder to export. Lower priority for demo kits (apps typically initialise volumes on first start). Can be addressed later with `docker run --rm -v <vol>:/data busybox tar` streaming approach.
 
