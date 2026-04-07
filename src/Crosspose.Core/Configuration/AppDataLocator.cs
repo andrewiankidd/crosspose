@@ -47,6 +47,9 @@ public static class AppDataLocator
             .IsInRole(WindowsBuiltInRole.Administrator);
 
     [SupportedOSPlatform("windows")]
+    public static bool IsRunningElevated => IsElevated;
+
+    [SupportedOSPlatform("windows")]
     public static string WithPortableSuffix(string title)
     {
         if (string.IsNullOrWhiteSpace(title)) title = "Crosspose";
