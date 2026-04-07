@@ -32,10 +32,7 @@ jobs:
 
       - name: Test
         run: >
-          dotnet test
-          src/Crosspose.Core.Tests
-          src/Crosspose.Doctor.Tests
-          src/Crosspose.Dekompose.Tests
+          dotnet test Crosspose.UnitTests.slnf
           --no-build
           --configuration Release
           --logger "console;verbosity=normal"
