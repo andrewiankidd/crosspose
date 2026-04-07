@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using Crosspose.Core.Configuration;
 
 namespace Crosspose.Doctor.Gui;
 
@@ -13,6 +14,20 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        if (!AppDataLocator.IsRunningElevated)
+        {
+            MessageBox.Show(
+                "Crosspose Doctor requires Administrator privileges to apply fixes " +
+                "(port proxies, firewall rules, service restarts).\n\n" +
+                "Please relaunch from an elevated terminal.",
+                "Crosspose Doctor — Administrator required",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            Shutdown(1);
+            return;
+        }
+
         foreach (var arg in e.Args)
         {
             if (arg.Equals("--auto-fix", StringComparison.OrdinalIgnoreCase))

@@ -12,6 +12,21 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        if (!AppDataLocator.IsRunningElevated)
+        {
+            MessageBox.Show(
+                "Crosspose requires Administrator privileges to manage port proxies, " +
+                "firewall rules, and Docker/WSL services.\n\n" +
+                "Please relaunch from an elevated terminal:\n\n" +
+                "Start-Process powershell -Verb RunAs -ArgumentList '-NoExit','-Command','dotnet run --project src/Crosspose.Gui'",
+                "Crosspose — Administrator required",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            Shutdown(1);
+            return;
+        }
+
         var cfg = CrossposeConfigurationStore.Load();
         if (cfg.Compose.Gui.DarkMode == true)
             ApplyTheme(dark: true);
