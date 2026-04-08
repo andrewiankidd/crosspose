@@ -1,8 +1,12 @@
+using System.IO;
+using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Crosspose.Core.Deployment;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Orchestration;
+using Crosspose.Doctor.Core;
 using Microsoft.Extensions.Logging;
 
 namespace Crosspose.Gui;
@@ -12,21 +16,31 @@ public partial class ContainerDetailsWindow : Window
     private readonly ContainerRow _row;
     private readonly ILogger _logger;
     private readonly IContainerPlatformRunner _runner;
+    private readonly ComposeOrchestrator _orchestrator;
+    private readonly OciRegistryStore _ociStore;
     private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _tagCts;
 
     // Lazy-load flags — each tab fetches once, then only on explicit Refresh
     private bool _inspectLoaded;
     private bool _statsLoaded;
 
-    public ContainerDetailsWindow(ContainerRow row, ILoggerFactory loggerFactory, InMemoryLogStore logStore, IContainerPlatformRunner runner)
+    public ContainerDetailsWindow(ContainerRow row, ILoggerFactory loggerFactory, InMemoryLogStore logStore, IContainerPlatformRunner runner, ComposeOrchestrator orchestrator)
     {
         InitializeComponent();
         _row = row;
         _logger = loggerFactory.CreateLogger("crosspose.gui.containerdetails");
         _runner = runner;
+        _orchestrator = orchestrator;
+        _ociStore = new OciRegistryStore(_logger);
         DataContext = row;
+        Title = $"Container Details: {row.Id}";
         Loaded += OnLoaded;
-        Unloaded += (_, _) => _cts?.Cancel();
+        Unloaded += (_, _) =>
+        {
+            _cts?.Cancel();
+            _tagCts?.Cancel();
+        };
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e) => await RefreshLogsAsync();
@@ -77,7 +91,7 @@ public partial class ContainerDetailsWindow : Window
             }
 
             _logger.LogInformation("Fetching logs for {Id}", id);
-            var result = await _runner.GetContainerLogsAsync(id, tail: 500, token);
+            var result = await _runner.GetContainerLogsAsync(id, tail: 500, timestamps: true, token);
             LogsText.Text = string.IsNullOrWhiteSpace(result.StandardOutput) ? "(no logs)" : result.StandardOutput;
             if (!string.IsNullOrWhiteSpace(result.StandardError))
                 LogsText.Text += Environment.NewLine + "---- stderr ----" + Environment.NewLine + result.StandardError;
@@ -253,6 +267,170 @@ public partial class ContainerDetailsWindow : Window
             _logger.LogError(ex, "Failed to fetch stats for {Id}", _row.UniqueId);
         }
         finally { StatsLoadingOverlay.Visibility = Visibility.Collapsed; }
+    }
+
+    // ── Image tag edit ─────────────────────────────────────────────────────────
+
+    private void OnEditImageStart(object sender, RoutedEventArgs e)
+    {
+        var (_, _, currentTag) = ParseImageRef(_row.Image);
+        ImageTagCombo.Text = currentTag;
+        ImageTagCombo.ItemsSource = null;
+        TagFetchStatus.Text = "Loading tags...";
+        SaveTagBtn.IsEnabled = false;
+        ImageViewPanel.Visibility = Visibility.Collapsed;
+        ImageEditPanel.Visibility = Visibility.Visible;
+        ImageTagCombo.Focus();
+        _tagCts?.Cancel();
+        _tagCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        _ = LoadTagsAsync(_tagCts.Token);
+    }
+
+    private async Task LoadTagsAsync(CancellationToken ct)
+    {
+        var (registry, repo, _) = ParseImageRef(_row.Image);
+        List<string> tags;
+        try
+        {
+            if (DoctorSettings.IsOfflineMode)
+                tags = await FetchLocalTagsAsync(registry, repo, ct);
+            else
+            {
+                tags = (await _ociStore.ListTagsForRepositoryAsync(registry, repo, ct)).ToList();
+                if (tags.Count == 0)
+                    tags = await FetchLocalTagsAsync(registry, repo, ct);
+            }
+        }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Tag fetch failed for {Image}", _row.Image);
+            tags = new List<string>();
+        }
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            if (ImageEditPanel.Visibility != Visibility.Visible) return;
+            ImageTagCombo.ItemsSource = tags;
+            TagFetchStatus.Text = tags.Count > 0 ? $"{tags.Count} tag(s)" : "(no tags found)";
+            SaveTagBtn.IsEnabled = true;
+        });
+    }
+
+    private async Task<List<string>> FetchLocalTagsAsync(string registry, string repo, CancellationToken ct)
+    {
+        var imageRef = string.IsNullOrWhiteSpace(registry) ? repo : $"{registry}/{repo}";
+        var images = await _runner.GetImagesDetailedAsync(ct);
+        return images
+            .Where(img => img.Name.Equals(imageRef, StringComparison.OrdinalIgnoreCase))
+            .Select(img => img.Tag)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList()!;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private async void OnImageTagSave(object sender, RoutedEventArgs e)
+    {
+        var newTag = ImageTagCombo.Text.Trim();
+        if (string.IsNullOrWhiteSpace(newTag)) return;
+
+        var (registry, repo, oldTag) = ParseImageRef(_row.Image);
+        if (newTag.Equals(oldTag, StringComparison.Ordinal)) { ExitEditMode(); return; }
+
+        var newImage = string.IsNullOrWhiteSpace(registry)
+            ? $"{repo}:{newTag}"
+            : $"{registry}/{repo}:{newTag}";
+
+        var projectDir = string.IsNullOrWhiteSpace(_row.Project)
+            ? null
+            : DeploymentMetadataStore.FindDeploymentDirectory(_row.Project);
+
+        if (projectDir is null)
+        {
+            TagFetchStatus.Text = "Deployment not found — update compose file manually";
+            return;
+        }
+
+        // Update image reference in every compose file that references it
+        var updated = false;
+        foreach (var file in Directory.GetFiles(projectDir, "docker-compose.*.yml"))
+        {
+            var yaml = File.ReadAllText(file);
+            if (!yaml.Contains(_row.Image)) continue;
+            File.WriteAllText(file, yaml.Replace(_row.Image, newImage));
+            updated = true;
+        }
+
+        if (!updated)
+        {
+            TagFetchStatus.Text = "Image not found in compose files";
+            return;
+        }
+
+        SaveTagBtn.IsEnabled = false;
+        TagFetchStatus.Text = "Applying...";
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            // No service filter — compose up -d without a target is idempotent and
+            // only recreates services whose image changed. Passing a service name would
+            // route to both Docker and Podman runners and fail on whichever platform
+            // doesn't own that service.
+            var request = new ComposeExecutionRequest(
+                SourcePath: projectDir,
+                Action: ComposeAction.Up,
+                Detached: true,
+                ProjectName: _row.Project);
+            await _orchestrator.ExecuteAsync(request, cts.Token);
+
+            _row.Image = newImage;
+            ImageViewLabel.Text = newImage;
+            ExitEditMode();
+
+            // Refresh logs so old entries from the previous container are replaced
+            await RefreshLogsAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to apply image tag change for {Container}", _row.Id);
+            TagFetchStatus.Text = $"Failed: {ex.Message[..Math.Min(ex.Message.Length, 60)]}";
+            SaveTagBtn.IsEnabled = true;
+        }
+    }
+
+    private void OnImageTagCancel(object sender, RoutedEventArgs e) => ExitEditMode();
+
+    private void ExitEditMode()
+    {
+        _tagCts?.Cancel();
+        ImageEditPanel.Visibility = Visibility.Collapsed;
+        ImageViewPanel.Visibility = Visibility.Visible;
+    }
+
+    private static (string registry, string repo, string tag) ParseImageRef(string image)
+    {
+        var tag = string.Empty;
+        // Split off tag at last colon, but only if no slash after the colon
+        var lastColon = image.LastIndexOf(':');
+        if (lastColon > 0 && !image[lastColon..].Contains('/'))
+        {
+            tag = image[(lastColon + 1)..];
+            image = image[..lastColon];
+        }
+
+        var firstSlash = image.IndexOf('/');
+        if (firstSlash > 0)
+        {
+            var candidate = image[..firstSlash];
+            if (candidate.Contains('.') || candidate.Contains(':') ||
+                candidate.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+            {
+                return (candidate, image[(firstSlash + 1)..], tag);
+            }
+        }
+
+        return (string.Empty, image, tag);
     }
 
     // ── View models ────────────────────────────────────────────────────────────
