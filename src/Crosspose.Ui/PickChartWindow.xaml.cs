@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using Crosspose.Core.Configuration;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging;
@@ -278,6 +279,14 @@ public partial class PickChartWindow : Window, INotifyPropertyChanged
                 path = RenameWithOciPrefix(path, chartRef);
                 await _helm.ExtractCrossposeFilesAsync(path);
                 PulledChartPath = path;
+
+                var baseName = Path.GetFileNameWithoutExtension(path);
+                var dir = Path.GetDirectoryName(path)!;
+                AutoDetectSiblingFile(Path.Combine(dir, baseName + ".values.yaml"),
+                    ref _postPullValuesPath, ValuesFileLabel);
+                AutoDetectSiblingFile(Path.Combine(dir, baseName + ".dekompose.yml"),
+                    ref _postPullDekomposeConfigPath, DekomposeConfigLabel);
+
                 // Show file association section instead of closing immediately
                 PostPullSection.Visibility = Visibility.Visible;
                 PullButton.Visibility = Visibility.Collapsed;
@@ -362,7 +371,8 @@ public partial class PickChartWindow : Window, INotifyPropertyChanged
         if (dlg.ShowDialog(this) == true)
         {
             _postPullValuesPath = dlg.FileName;
-            ValuesFileLabel.Text = System.IO.Path.GetFileName(dlg.FileName);
+            ValuesFileLabel.Text = Path.GetFileName(dlg.FileName);
+            ValuesFileLabel.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimary");
         }
     }
 
@@ -376,8 +386,17 @@ public partial class PickChartWindow : Window, INotifyPropertyChanged
         if (dlg.ShowDialog(this) == true)
         {
             _postPullDekomposeConfigPath = dlg.FileName;
-            DekomposeConfigLabel.Text = System.IO.Path.GetFileName(dlg.FileName);
+            DekomposeConfigLabel.Text = Path.GetFileName(dlg.FileName);
+            DekomposeConfigLabel.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimary");
         }
+    }
+
+    private void AutoDetectSiblingFile(string filePath, ref string? field, TextBlock label)
+    {
+        if (!File.Exists(filePath)) return;
+        field = filePath;
+        label.Text = Path.GetFileName(filePath) + " (from chart)";
+        label.SetResourceReference(TextBlock.ForegroundProperty, "AccentPositive");
     }
 
     private void CopyPostPullFiles()
@@ -385,10 +404,15 @@ public partial class PickChartWindow : Window, INotifyPropertyChanged
         if (PulledChartPath is null) return;
         var baseName = Path.GetFileNameWithoutExtension(PulledChartPath);
         var dir = Path.GetDirectoryName(PulledChartPath)!;
-        if (_postPullValuesPath is not null)
-            File.Copy(_postPullValuesPath, Path.Combine(dir, baseName + ".values.yaml"), overwrite: true);
-        if (_postPullDekomposeConfigPath is not null)
-            File.Copy(_postPullDekomposeConfigPath, Path.Combine(dir, baseName + ".dekompose.yml"), overwrite: true);
+        CopyIfDifferent(_postPullValuesPath, Path.Combine(dir, baseName + ".values.yaml"));
+        CopyIfDifferent(_postPullDekomposeConfigPath, Path.Combine(dir, baseName + ".dekompose.yml"));
+    }
+
+    private static void CopyIfDifferent(string? source, string dest)
+    {
+        if (source is null) return;
+        if (string.Equals(source, dest, StringComparison.OrdinalIgnoreCase)) return;
+        File.Copy(source, dest, overwrite: true);
     }
 
     private void OnLogClearRequested(object sender, EventArgs e)

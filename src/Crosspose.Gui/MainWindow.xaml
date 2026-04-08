@@ -156,6 +156,7 @@
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0" Margin="0,4,0,8">
+                    <!-- Charts: New/Dekompose accent colors controlled dynamically in UpdateChartButtons() -->
                     <StackPanel x:Name="ChartsToolbar" Orientation="Horizontal" Visibility="Collapsed">
                         <Button x:Name="ChartsOpenFolderButton" Padding="10,4" Click="OnChartsOpenFolder" Margin="0,0,8,0">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -174,14 +175,14 @@
                                 ToolTip="Associate a values.yaml with this chart. Stored alongside the chart and passed to Dekompose automatically.">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="DocumentSettings" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Set values file" />
+                                <TextBlock Text="Values" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="ChartsSetDekomposeConfigButton" Padding="10,4" Click="OnChartsSetDekomposeConfig" Margin="0,0,8,0" IsEnabled="False"
                                 ToolTip="Associate a dekompose.yml with this chart. Stored alongside the chart and used as conversion rules when Dekomposing.">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="DocumentEdit" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Set dekompose config" />
+                                <TextBlock Text="Config" />
                             </StackPanel>
                         </Button>
                         <Separator Margin="4,2" />
@@ -191,36 +192,45 @@
                                 <TextBlock Text="Dekompose" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="ChartsDeleteButton" Padding="10,4" Click="OnChartsDelete" IsEnabled="False">
+                        <Button x:Name="ChartsDeleteButton" Tag="AccentDestructive" Padding="10,4" Click="OnChartsDelete" Margin="0,0,8,0" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Delete" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ChartsRefreshButton" Padding="8,4" Click="OnRefreshClick">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="ArrowClockwise" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Refresh" />
                             </StackPanel>
                         </Button>
                     </StackPanel>
+                    <!-- Compose Bundles: New redirects to Helm Charts (bundles are created via Dekompose from there) -->
                     <StackPanel x:Name="DefinitionsToolbar" Orientation="Horizontal" Visibility="Collapsed">
-                        <Button x:Name="ProjectsNewButton" Padding="10,4" Click="OnProjectsNew" Margin="0,0,8,0">
+                        <Button x:Name="ProjectsNewButton" Tag="AccentPositive" Padding="10,4" Click="OnProjectsNew" Margin="0,0,8,0"
+                                ToolTip="Go to Helm Charts to pull and Dekompose a chart into a new bundle">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="Add" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="New" />
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="ProjectsDeployButton" Padding="10,4" Click="OnProjectsDeploy" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="Rocket" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Deploy" />
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="ProjectsDeleteProjectButton" Padding="10,4" Click="OnProjectsDeleteProject" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Delete" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="ProjectsOpenButton" Padding="10,4" Click="OnProjectsOpen" Margin="0,0,8,0">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="FolderOpen" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Open Folder" />
+                            </StackPanel>
+                        </Button>
+                        <Separator Margin="4,2" />
+                        <Button x:Name="ProjectsDeployButton" Tag="AccentPositive" Padding="10,4" Click="OnProjectsDeploy" Margin="4,0,8,0" IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="Rocket" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Deploy" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ProjectsDeleteProjectButton" Tag="AccentDestructive" Padding="10,4" Click="OnProjectsDeleteProject" Margin="0,0,8,0" IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Delete" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="DefinitionsRefreshButton" Padding="8,4" Click="OnRefreshClick">
@@ -237,22 +247,17 @@
                                 <TextBlock Text="Open Folder" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="DeploymentsUpButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsUp" IsEnabled="False">
+                        <Separator Margin="4,2" />
+                        <Button x:Name="DeploymentsUpButton" Tag="AccentPositive" Padding="10,4" Margin="4,0,8,0" Click="OnDeploymentsUp" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="ChevronUp" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Up" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="DeploymentsDownButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsDown" IsEnabled="False">
+                        <Button x:Name="DeploymentsStartButton" Tag="AccentPositive" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsStart" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="ChevronDown" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Down" />
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="DeploymentsRestartButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsRestart" IsEnabled="False">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="ArrowSync" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Restart" />
+                                <ic:FluentIcon Icon="Play" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Start" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="DeploymentsStopButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsStop" IsEnabled="False">
@@ -261,16 +266,23 @@
                                 <TextBlock Text="Stop" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="DeploymentsStartButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsStart" IsEnabled="False">
+                        <Button x:Name="DeploymentsRestartButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsRestart" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="Play" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Start" />
+                                <ic:FluentIcon Icon="ArrowSync" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Restart" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="DeploymentsRemoveButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsRemove" IsEnabled="False">
+                        <Button x:Name="DeploymentsDownButton" Padding="10,4" Margin="0,0,8,0" Click="OnDeploymentsDown" IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="ChevronDown" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Down" />
+                            </StackPanel>
+                        </Button>
+                        <Separator Margin="4,2" />
+                        <Button x:Name="DeploymentsRemoveButton" Tag="AccentDestructive" Padding="10,4" Margin="4,0,8,0" Click="OnDeploymentsRemove" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Remove" />
+                                <TextBlock Text="Delete" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="DeploymentsRefreshButton" Padding="8,4" Click="OnRefreshClick">
@@ -281,7 +293,7 @@
                         </Button>
                     </StackPanel>
                     <StackPanel x:Name="ContainersToolbar" Orientation="Horizontal" Visibility="Collapsed">
-                        <Button x:Name="ContainersStartButton" Padding="10,4" Margin="0,0,8,0" Click="OnContainersStart" IsEnabled="False">
+                        <Button x:Name="ContainersStartButton" Tag="AccentPositive" Padding="10,4" Margin="0,0,8,0" Click="OnContainersStart" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="Play" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Start" />
@@ -299,7 +311,8 @@
                                 <TextBlock Text="Details" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="ContainersDeleteButton" Padding="10,4" Margin="0,0,8,0" Click="OnContainersDelete" IsEnabled="False">
+                        <Separator Margin="4,2" />
+                        <Button x:Name="ContainersDeleteButton" Tag="AccentDestructive" Padding="10,4" Margin="4,0,8,0" Click="OnContainersDelete" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Delete" />
@@ -313,16 +326,16 @@
                         </Button>
                     </StackPanel>
                     <StackPanel x:Name="ImagesToolbar" Orientation="Horizontal" Visibility="Collapsed">
-                        <Button x:Name="ImagesPruneButton" Padding="10,4" Margin="0,0,8,0" Click="OnImagesPull">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="LeafTwo" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Prune Unused" />
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="ImagesDeleteButton" Padding="10,4" Margin="0,0,8,0" Click="OnImagesDelete" IsEnabled="False">
+                        <Button x:Name="ImagesDeleteButton" Tag="AccentDestructive" Padding="10,4" Margin="0,0,8,0" Click="OnImagesDelete" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Delete" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ImagesPruneButton" Tag="AccentDestructive" Padding="10,4" Margin="0,0,8,0" Click="OnImagesPull">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="LeafTwo" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Prune Unused" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="ImagesRefreshButton" Padding="8,4" Click="OnRefreshClick">
@@ -333,22 +346,23 @@
                         </Button>
                     </StackPanel>
                     <StackPanel x:Name="VolumesToolbar" Orientation="Horizontal" Visibility="Collapsed">
-                        <Button x:Name="VolumesDeleteButton" Padding="10,4" Margin="0,0,8,0" Click="OnVolumesDelete" IsEnabled="False">
+                        <Button x:Name="VolumesInspectButton" Padding="10,4" Margin="0,0,8,0" Click="OnVolumesInspect" IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ic:FluentIcon Icon="Search" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
+                                <TextBlock Text="Inspect" />
+                            </StackPanel>
+                        </Button>
+                        <Separator Margin="4,2" />
+                        <Button x:Name="VolumesDeleteButton" Tag="AccentDestructive" Padding="10,4" Margin="4,0,8,0" Click="OnVolumesDelete" IsEnabled="False">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="Delete" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
                                 <TextBlock Text="Delete" />
                             </StackPanel>
                         </Button>
-                        <Button x:Name="VolumesPruneButton" Padding="10,4" Margin="0,0,8,0" Click="OnVolumesPrune">
+                        <Button x:Name="VolumesPruneButton" Tag="AccentDestructive" Padding="10,4" Margin="0,0,8,0" Click="OnVolumesPrune">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <ic:FluentIcon Icon="LeafTwo" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Prune" />
-                            </StackPanel>
-                        </Button>
-                        <Button x:Name="VolumesInspectButton" Padding="10,4" Margin="0,0,8,0" Click="OnVolumesInspect" IsEnabled="False">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ic:FluentIcon Icon="Search" IconVariant="Filled" IconSize="Size16" Width="16" Height="16" Margin="0,0,6,0" />
-                                <TextBlock Text="Inspect" />
+                                <TextBlock Text="Prune Unused" />
                             </StackPanel>
                         </Button>
                         <Button x:Name="VolumesRefreshButton" Padding="8,4" Click="OnRefreshClick">

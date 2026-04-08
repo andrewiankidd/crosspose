@@ -21,13 +21,41 @@
                     </Trigger>
                 </Style.Triggers>
             </Style>
-            <!-- Minimal: use default buttons; opt-in green via Tag="AccentPositive" -->
+            <!-- Opt-in accent colours via Tag="AccentPositive|AccentBlue|AccentDestructive".
+                 MultiTrigger requires IsEnabled=True so disabled buttons keep the standard
+                 disabled appearance (readable text, no washed-out accent colour). -->
             <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                 <Style.Triggers>
-                    <Trigger Property="Tag" Value="AccentPositive">
-                        <Setter Property="Background" Value="{DynamicResource AccentPositive}" />
-                        <Setter Property="Foreground" Value="White" />
-                    </Trigger>
+                    <MultiTrigger>
+                        <MultiTrigger.Conditions>
+                            <Condition Property="Tag" Value="AccentPositive" />
+                            <Condition Property="IsEnabled" Value="True" />
+                        </MultiTrigger.Conditions>
+                        <MultiTrigger.Setters>
+                            <Setter Property="Background" Value="{DynamicResource AccentPositive}" />
+                            <Setter Property="Foreground" Value="White" />
+                        </MultiTrigger.Setters>
+                    </MultiTrigger>
+                    <MultiTrigger>
+                        <MultiTrigger.Conditions>
+                            <Condition Property="Tag" Value="AccentBlue" />
+                            <Condition Property="IsEnabled" Value="True" />
+                        </MultiTrigger.Conditions>
+                        <MultiTrigger.Setters>
+                            <Setter Property="Background" Value="{DynamicResource AccentBlue}" />
+                            <Setter Property="Foreground" Value="White" />
+                        </MultiTrigger.Setters>
+                    </MultiTrigger>
+                    <MultiTrigger>
+                        <MultiTrigger.Conditions>
+                            <Condition Property="Tag" Value="AccentDestructive" />
+                            <Condition Property="IsEnabled" Value="True" />
+                        </MultiTrigger.Conditions>
+                        <MultiTrigger.Setters>
+                            <Setter Property="Background" Value="{DynamicResource AccentDestructive}" />
+                            <Setter Property="Foreground" Value="White" />
+                        </MultiTrigger.Setters>
+                    </MultiTrigger>
                 </Style.Triggers>
             </Style>
             <local:StatusBrushConverter x:Key="StatusBrushConverter"/>

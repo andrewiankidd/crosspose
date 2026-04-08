@@ -987,6 +987,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ChartsList.Visibility = Visibility.Visible;
         ChartsToolbar.Visibility = Visibility.Visible;
 
+        // Preserve selection across refreshes.
+        var selectedFile = (ChartsList.SelectedItem as ChartFileRow)?.FullPath;
+
         var dir = CrossposeEnvironment.HelmChartsDirectory;
         Directory.CreateDirectory(dir);
         Charts.Clear();
@@ -1003,6 +1006,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 DekomposeConfigPath = FindChartSiblingFile(info.FullName, ".dekompose"),
             });
         }
+
+        if (selectedFile is not null)
+        {
+            var match = Charts.FirstOrDefault(c => c.FullPath.Equals(selectedFile, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                ChartsList.SelectedItem = match;
+                ChartsList.ScrollIntoView(match);
+            }
+        }
+
         UpdateChartButtons();
         UpdateSidebarCounts();
         return Task.CompletedTask;
@@ -1053,6 +1067,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ChartsDeleteButton.IsEnabled = hasSelection;
         ChartsSetValuesButton.IsEnabled = hasSelection;
         ChartsSetDekomposeConfigButton.IsEnabled = hasSelection;
+
+        // When nothing is selected, New is the call-to-action (green).
+        // Once a chart is selected, Dekompose becomes the call-to-action (blue).
+        ChartsNewButton.Tag = hasSelection ? null : "AccentPositive";
+        ChartsDekomposeButton.Tag = hasSelection ? "AccentBlue" : null;
     }
 
     private void OnChartsSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) =>
@@ -1077,7 +1096,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var window = new PickChartWindow { Owner = this };
         if (window.ShowDialog() == true)
+        {
             _ = ShowChartsAsync();
+            // Auto-select the just-pulled chart to nudge the user toward Dekompose
+            if (window.PulledChartPath is not null)
+            {
+                var pulledName = Path.GetFileName(window.PulledChartPath);
+                var match = Charts.FirstOrDefault(c => c.FileName == pulledName);
+                ChartsList.SelectedItem = match ?? (Charts.Count > 0 ? Charts[0] : null);
+            }
+        }
     }
 
     private async void OnChartsDekompose(object sender, RoutedEventArgs e)
@@ -1408,8 +1436,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnProjectsNew(object sender, RoutedEventArgs e)
     {
-        _logger.LogInformation("Launching Crosspose Dekompose from Compose Bundles view.");
-        OnDekomposeClick(sender, e);
+        // Compose bundles are created via Dekompose from a Helm chart.
+        // Navigate the user to Helm Charts to pull and Dekompose from there.
+        SidebarSetup.SelectedItem = SidebarChartsItem;
     }
 
     private void OnProjectsSelectionChanged(object sender, SelectionChangedEventArgs e)
