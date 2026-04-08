@@ -22,6 +22,7 @@ public static class CheckCatalog
             new WslMemoryLimitCheck(),
             new WslNetworkingModeCheck(),
             new StalePortProxyCheck(),
+            new StaleFirewallRuleCheck(),
             new SudoCheck(),
             new CrossposeWslCheck(),
             new PodmanWslCheck(),
