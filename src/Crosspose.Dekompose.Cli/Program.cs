@@ -154,7 +154,7 @@ if (renderedManifestPath is null)
     return 1;
 }
 
-var ruleSets = CrossposeEnvironment.GetDekomposeRules(chartInfo?.Name);
+var ruleSets = CrossposeEnvironment.GetDekomposeRules(chartInfo?.Name, chartInfo?.TgzName);
 logger.LogInformation("Resolved {RuleCount} Dekompose rule sets for chart {ChartName}.",
     ruleSets.Count,
     chartInfo?.Name ?? "(unknown)");
@@ -329,9 +329,10 @@ static ChartInfo? TryReadChartInfo(string chartPath)
                 System.Formats.Tar.TarEntry? entry;
                 while ((entry = tar.GetNextEntry()) != null)
                 {
-                    var entryName = entry.Name.Replace('\\', '/');
-                    // Match <chartdir>/Chart.yaml at any depth
-                    if (!entryName.EndsWith("/Chart.yaml", StringComparison.OrdinalIgnoreCase))
+                    var entryName = entry.Name.Replace('\\', '/').TrimStart('/');
+                    // Match only the root Chart.yaml: exactly one directory level (<chartdir>/Chart.yaml)
+                    var slashCount = entryName.Count(c => c == '/');
+                    if (slashCount != 1 || !entryName.EndsWith("/Chart.yaml", StringComparison.OrdinalIgnoreCase))
                         continue;
                     using var reader = new StreamReader(entry.DataStream!);
                     string? name = null;
@@ -346,7 +347,17 @@ static ChartInfo? TryReadChartInfo(string chartPath)
                         if (name is not null && version is not null) break;
                     }
                     if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(version))
-                        return new ChartInfo(name, version);
+                    {
+                        // Record the tgz filename-derived name as an alias for rule matching.
+                        // Dekompose.yml authors typically use the tgz product name (e.g. "helm-platform")
+                        // which may differ from the internal Chart.yaml name (e.g. "platform").
+                        string? tgzDerivedName = null;
+                        var tgzBase = Path.GetFileNameWithoutExtension(chartPath);
+                        var tgzHyphen = tgzBase.LastIndexOf('-');
+                        if (tgzHyphen > 0 && tgzHyphen < tgzBase.Length - 1 && char.IsDigit(tgzBase[tgzHyphen + 1]))
+                            tgzDerivedName = tgzBase[..tgzHyphen];
+                        return new ChartInfo(name, version, tgzDerivedName);
+                    }
                     break; // only one Chart.yaml expected
                 }
             }
@@ -415,4 +426,4 @@ internal sealed record DekomposeOptions
     public bool ShowVersion { get; set; }
 }
 
-internal sealed record ChartInfo(string Name, string Version);
+internal sealed record ChartInfo(string Name, string Version, string? TgzName = null);
