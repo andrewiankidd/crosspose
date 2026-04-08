@@ -32,8 +32,22 @@ public partial class FixWindow : Window
             OutputHandler = line => AppendLine(SecretCensor.Sanitize(line))
         };
 
+        AppendLine("Checking current state...");
+        using var checkCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        var current = await _check.RunAsync(runner, _loggerFactory.CreateLogger(_check.Name), checkCts.Token);
+        if (current.IsSuccessful)
+        {
+            Success = true;
+            FinalMessage = "Check already passing — no fix needed.";
+            AppendLine("");
+            AppendLine(FinalMessage);
+            ContinueButton.IsEnabled = true;
+            return;
+        }
+
         AppendLine("Starting fix...");
-        var result = await _check.FixAsync(runner, _loggerFactory.CreateLogger(_check.Name), default);
+        using var fixCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        var result = await _check.FixAsync(runner, _loggerFactory.CreateLogger(_check.Name), fixCts.Token);
         Success = result.Succeeded;
         FinalMessage = result.Message;
 
