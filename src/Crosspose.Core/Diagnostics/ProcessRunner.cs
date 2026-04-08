@@ -135,6 +135,12 @@ public sealed class ProcessRunner
             _logger.LogWarning(ex, message);
             return new ProcessResult(-1, string.Empty, message);
         }
+        catch (Win32Exception ex)
+        {
+            var message = $"Failed to start process '{command}': {ex.Message} (Win32 error {ex.NativeErrorCode})";
+            _logger.LogWarning(ex, message);
+            return new ProcessResult(-1, string.Empty, message);
+        }
     }
 
     /// <summary>

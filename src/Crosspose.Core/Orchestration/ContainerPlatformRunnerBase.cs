@@ -95,8 +95,13 @@ public abstract class ContainerPlatformRunnerBase : VirtualizationPlatformRunner
         return await ExecAsync(parts, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    public virtual Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default) =>
-        ExecAsync(new[] { "logs", "--tail", tail.ToString(), id }, cancellationToken: cancellationToken);
+    public virtual Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, bool timestamps = false, CancellationToken cancellationToken = default)
+    {
+        var args = new List<string> { "logs", "--tail", tail.ToString() };
+        if (timestamps) args.Add("--timestamps");
+        args.Add(id);
+        return ExecAsync(args, cancellationToken: cancellationToken);
+    }
 
     protected virtual async Task<PlatformCommandResult> ExecuteAndWrapAsync(IEnumerable<string> args, CancellationToken cancellationToken)
     {
