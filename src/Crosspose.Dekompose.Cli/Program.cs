@@ -318,9 +318,41 @@ static ChartInfo? TryReadChartInfo(string chartPath)
                 return new ChartInfo(name, version);
         }
 
-        // .tgz file — parse by filename convention: <name>-<version>.tgz
+        // .tgz file — read Chart.yaml from inside the archive first
         if (chartPath.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
         {
+            try
+            {
+                using var fs = File.OpenRead(chartPath);
+                using var gz = new System.IO.Compression.GZipStream(fs, System.IO.Compression.CompressionMode.Decompress);
+                using var tar = new System.Formats.Tar.TarReader(gz);
+                System.Formats.Tar.TarEntry? entry;
+                while ((entry = tar.GetNextEntry()) != null)
+                {
+                    var entryName = entry.Name.Replace('\\', '/');
+                    // Match <chartdir>/Chart.yaml at any depth
+                    if (!entryName.EndsWith("/Chart.yaml", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    using var reader = new StreamReader(entry.DataStream!);
+                    string? name = null;
+                    string? version = null;
+                    string? line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        if (name is null && line.TrimStart().StartsWith("name:", StringComparison.OrdinalIgnoreCase))
+                            name = line.Split(':', 2)[1].Trim();
+                        if (version is null && line.TrimStart().StartsWith("version:", StringComparison.OrdinalIgnoreCase))
+                            version = line.Split(':', 2)[1].Trim();
+                        if (name is not null && version is not null) break;
+                    }
+                    if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(version))
+                        return new ChartInfo(name, version);
+                    break; // only one Chart.yaml expected
+                }
+            }
+            catch { /* fall through to filename parsing */ }
+
+            // Fallback: parse by filename convention: <name>-<version>.tgz
             var baseName = Path.GetFileNameWithoutExtension(chartPath);
             // Version starts at the last hyphen followed by a digit
             var lastHyphen = baseName.LastIndexOf('-');
