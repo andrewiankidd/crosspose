@@ -205,6 +205,6 @@ file sealed class FakeContainerRunner : IContainerPlatformRunner
     public Task<ProcessResult> ExecInContainerAsync(string id, string commandLine, CancellationToken cancellationToken = default)
         => Task.FromResult(new ProcessResult(-1, string.Empty, "Not implemented."));
 
-    public Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default)
+    public Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, bool timestamps = false, CancellationToken cancellationToken = default)
         => Task.FromResult(new ProcessResult(-1, string.Empty, "Not implemented."));
 }

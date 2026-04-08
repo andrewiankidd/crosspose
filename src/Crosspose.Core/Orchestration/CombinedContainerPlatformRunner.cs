@@ -139,9 +139,9 @@ public sealed class CombinedContainerPlatformRunner : IContainerPlatformRunner
             ? runner!.ExecInContainerAsync(actualId, commandLine, cancellationToken)
             : Task.FromResult(new ProcessResult(-1, string.Empty, "Unknown platform."));
 
-    public Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default) =>
+    public Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, bool timestamps = false, CancellationToken cancellationToken = default) =>
         TryResolveRunner(id, out var runner, out var actualId)
-            ? runner!.GetContainerLogsAsync(actualId, tail, cancellationToken)
+            ? runner!.GetContainerLogsAsync(actualId, tail, timestamps, cancellationToken)
             : Task.FromResult(new ProcessResult(-1, string.Empty, "Unknown platform."));
 
     private static PlatformCommandResult Merge(string header, PlatformCommandResult docker, PlatformCommandResult podman)

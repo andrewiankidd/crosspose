@@ -22,5 +22,5 @@ public interface IContainerPlatformRunner : IVirtualizationPlatformRunner
     Task<ContainerInspectResult?> InspectContainerAsync(string id, CancellationToken cancellationToken = default);
     Task<ContainerStatsResult?> GetContainerStatsAsync(string id, CancellationToken cancellationToken = default);
     Task<ProcessResult> ExecInContainerAsync(string id, string commandLine, CancellationToken cancellationToken = default);
-    Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, CancellationToken cancellationToken = default);
+    Task<ProcessResult> GetContainerLogsAsync(string id, int tail = 500, bool timestamps = false, CancellationToken cancellationToken = default);
 }
