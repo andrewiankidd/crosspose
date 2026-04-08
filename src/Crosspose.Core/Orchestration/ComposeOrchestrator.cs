@@ -209,12 +209,16 @@ public sealed class ComposeOrchestrator
         // service_healthy depends_on conditions can transition out of "starting".
         // crosspose-data has no systemd, so podman's healthcheck timer never fires
         // automatically — without this, compose up blocks until it times out.
+        //
+        // compose up -d returns immediately (detached). We keep the driver alive for
+        // a grace period after compose exits so containers that were still in "created"
+        // when compose returned have time to start and become healthy.
         if (platform == ComposePlatform.Podman && (request.Action == ComposeAction.Up || podmanForceRecreate))
         {
             using var hcCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var hcTask = RunPodmanHealthcheckDriverAsync(hcCts.Token);
             var composeResult = await runner.ExecAsync(args, env, cancellationToken).ConfigureAwait(false);
-            hcCts.Cancel();
+            hcCts.CancelAfter(TimeSpan.FromSeconds(60));
             try { await hcTask.ConfigureAwait(false); } catch (OperationCanceledException) { }
             return new PlatformCommandResult("podman", composeResult);
         }
@@ -422,9 +426,17 @@ public sealed class ComposeOrchestrator
                     foreach (var name in SplitNames(createdResult.StandardOutput))
                     {
                         _logger.LogInformation("Starting Created podman container {Container}", name);
-                        await wsl.ExecAsync(
+                        var startResult = await wsl.ExecAsync(
                             ["-d", distro, "--", "podman", "start", name],
                             cancellationToken: cancellationToken).ConfigureAwait(false);
+                        if (!startResult.IsSuccess)
+                        {
+                            _logger.LogWarning("Failed to start container {Container}: {Error}",
+                                name,
+                                string.IsNullOrWhiteSpace(startResult.StandardError)
+                                    ? startResult.StandardOutput
+                                    : startResult.StandardError);
+                        }
                     }
                 }
 
