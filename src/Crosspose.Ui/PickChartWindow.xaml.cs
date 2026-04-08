@@ -276,6 +276,7 @@ public partial class PickChartWindow : Window, INotifyPropertyChanged
             if (path is not null)
             {
                 path = RenameWithOciPrefix(path, chartRef);
+                await _helm.ExtractCrossposeFilesAsync(path);
                 PulledChartPath = path;
                 // Show file association section instead of closing immediately
                 PostPullSection.Visibility = Visibility.Visible;

@@ -92,6 +92,7 @@ graph TD
 
 - [Setup guide](setup.md) — prerequisites and installation
 - [Configuration](configuration.md) — `crosspose.yml` schema, portable mode
+- [Helm chart authoring](helm-chart-authoring.md) — bundling `crosspose/` defaults inside a chart
 - [Examples](examples.md) — usage examples
 
 ## Next steps
