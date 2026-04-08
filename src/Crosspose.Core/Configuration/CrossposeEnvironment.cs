@@ -60,9 +60,9 @@ public static class CrossposeEnvironment
     public static bool HasPowerShellModulePath => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PSModulePath"));
     public static bool IsShellAvailable => HasCommandPrompt || HasPowerShellModulePath;
 
-    public static IReadOnlyList<DekomposeRuleSet> GetDekomposeRules(string? chartName)
+    public static IReadOnlyList<DekomposeRuleSet> GetDekomposeRules(string? chartName, string? tgzChartName = null)
     {
-        if (string.IsNullOrWhiteSpace(chartName))
+        if (string.IsNullOrWhiteSpace(chartName) && string.IsNullOrWhiteSpace(tgzChartName))
         {
             return Array.Empty<DekomposeRuleSet>();
         }
@@ -76,7 +76,9 @@ public static class CrossposeEnvironment
         var matches = new List<DekomposeRuleSet>();
         foreach (var rule in rules)
         {
-            if (IsPatternMatch(rule.Match, chartName))
+            var matched = (!string.IsNullOrWhiteSpace(chartName) && IsPatternMatch(rule.Match, chartName))
+                       || (!string.IsNullOrWhiteSpace(tgzChartName) && IsPatternMatch(rule.Match, tgzChartName));
+            if (matched)
             {
                 matches.Add(rule);
             }

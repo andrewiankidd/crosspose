@@ -77,6 +77,50 @@ public sealed class OciRegistryStore
         var result = await client.ListAsync(auth, cancellationToken);
         return result.Items.Select(c => c.Name).ToList();
     }
+
+    /// <summary>
+    /// Fetches all available tags for a container image repository (e.g. "erp-services/platform-erp-service").
+    /// Matches against configured OCI registries by hostname. Returns an empty list if no registry is
+    /// found or the fetch fails.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ListTagsForRepositoryAsync(string registry, string repository, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(repository)) return Array.Empty<string>();
+
+        OciRegistryEntry? entry = null;
+        if (!string.IsNullOrWhiteSpace(registry))
+        {
+            entry = _registries.FirstOrDefault(r =>
+            {
+                var addr = r.Address;
+                if (!addr.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    addr = "https://" + addr;
+                if (Uri.TryCreate(addr, UriKind.Absolute, out var uri))
+                    return uri.Host.Equals(registry, StringComparison.OrdinalIgnoreCase);
+                return false;
+            });
+        }
+
+        var registryUrl = entry?.Address
+            ?? (registry.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? registry : "https://" + registry);
+        var auth = entry is not null
+            ? new SourceAuth(entry.Username, entry.Password, entry.BearerToken)
+            : null;
+
+        try
+        {
+            var client = new OciSourceClient(registryUrl, _logger);
+            var result = await client.ListVersionsAsync(repository, auth, cancellationToken);
+            return result.IsSuccess
+                ? result.Versions.Select(v => v.Tag).Where(t => !string.IsNullOrWhiteSpace(t)).ToList()!
+                : Array.Empty<string>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to list tags for {Registry}/{Repo}", registry, repository);
+            return Array.Empty<string>();
+        }
+    }
 }
 
 public sealed class OciRegistryEntry

@@ -54,4 +54,33 @@ public static class DeploymentMetadataStore
         update(metadata);
         Write(directory, metadata);
     }
+
+    /// <summary>
+    /// Returns the most recent deployment directory for <paramref name="project"/>, or null if
+    /// no matching deployment exists under <see cref="Configuration.CrossposeEnvironment.DeploymentDirectory"/>.
+    /// When multiple version subdirectories exist, the one with the latest last-write time is returned.
+    /// </summary>
+    public static string? FindDeploymentDirectory(string project)
+    {
+        if (string.IsNullOrWhiteSpace(project)) return null;
+        var deployBase = Configuration.CrossposeEnvironment.DeploymentDirectory;
+        if (!Directory.Exists(deployBase)) return null;
+
+        // Layout: <deployBase>/<project-name>/<version>/
+        var projectRoot = Path.Combine(deployBase, project);
+        if (Directory.Exists(projectRoot))
+        {
+            // Return the most recent version subfolder
+            return Directory.EnumerateDirectories(projectRoot)
+                .OrderByDescending(Directory.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+        }
+
+        // Fallback: search one level deeper for a case-insensitive match
+        return Directory.EnumerateDirectories(deployBase)
+            .Where(d => Path.GetFileName(d).Equals(project, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(d => Directory.EnumerateDirectories(d))
+            .OrderByDescending(Directory.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
 }
