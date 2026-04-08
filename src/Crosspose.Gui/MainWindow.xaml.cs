@@ -517,13 +517,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var grouped = groupedRows
             .OrderBy(kvp => string.IsNullOrWhiteSpace(kvp.Key) ? 1 : 0)
             .ThenBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(kvp => new GroupedEntries(kvp.Key, kvp.Value));
+            .Select(kvp => new GroupedEntries(kvp.Key, kvp.Value))
+            .ToList();
         await Dispatcher.InvokeAsync(() =>
         {
             var expansion = ContainerGroups.ToDictionary(p => p.Name, p => p.IsExpanded, StringComparer.OrdinalIgnoreCase);
             ContainerGroups.Clear();
             AllContainers.Clear();
             _pullPlaceholder = null;
+            // Once real containers appear for the pulling project, the pull is done
+            if (_pullingProject is not null && grouped.Any(g => g.Key.Equals(_pullingProject, StringComparison.OrdinalIgnoreCase)))
+            {
+                _pullingProject = null;
+                _pullLayers.Clear();
+            }
             foreach (var group in grouped)
             {
                 var displayName = string.IsNullOrWhiteSpace(group.Key) ? "(unassigned)" : group.Key;
@@ -1801,7 +1808,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var row = GetSelectedContainerRows().FirstOrDefault();
         if (row is null) return;
-        var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore, _combinedRunner) { Owner = this };
+        var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore, _combinedRunner, _composeOrchestrator) { Owner = this };
         details.Show();
     }
 
@@ -2019,8 +2026,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         finally
         {
-            if (action == ComposeAction.Up)
-                _pullingProject = null;
+            // Don't clear _pullingProject here — compose up -d returns immediately while
+            // Docker/Podman continues pulling in the background. Keep the placeholder until
+            // RefreshContainersInternal sees real containers appear for this project.
         }
 
         if (executionResult is not null)
@@ -2457,7 +2465,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (ContainersList.SelectedItem is ContainerRow row)
         {
-            var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore, _combinedRunner) { Owner = this };
+            var details = new ContainerDetailsWindow(row, _loggerFactory, _logStore, _combinedRunner, _composeOrchestrator) { Owner = this };
             details.Show();
             e.Handled = true;
         }
@@ -2482,7 +2490,19 @@ public class ContainerRow : INotifyPropertyChanged
         public string Platform { get; set; } = string.Empty;
         public string HostPlatform { get; set; } = string.Empty;
         public string Id { get; set; } = string.Empty;
-        public string Image { get; set; } = string.Empty;
+        private string _image = string.Empty;
+        public string Image
+        {
+            get => _image;
+            set
+            {
+                if (_image != value)
+                {
+                    _image = value;
+                    OnPropertyChanged(nameof(Image));
+                }
+            }
+        }
         public string Ports { get; set; } = string.Empty;
         private string _state = string.Empty;
         public string State
