@@ -540,12 +540,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ContainerGroups.Add(pg);
             }
 
-            // Re-inject pull placeholder if a compose up is still in progress
-            if (_pullingProject is not null)
-            {
-                _pullPlaceholder = CreatePullPlaceholder(_pullingProject);
-                AllContainers.Add(_pullPlaceholder);
-            }
 
             OnPropertyChanged(nameof(LogOutput));
             UpdateContainerButtons();
