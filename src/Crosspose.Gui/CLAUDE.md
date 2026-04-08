@@ -14,7 +14,7 @@ Main WPF dashboard for Crosspose. Provides a container/image/volume management i
 ## Windows
 
 - **MainWindow** — sidebar navigation, TreeView for containers grouped by project, ListView for images/volumes/charts, auto-refresh via `DispatcherTimer`, start/stop/remove actions, prune actions.
-- **ContainerDetailsWindow** — container inspection with live logs tab (fetches via `docker/podman logs`).
+- **ContainerDetailsWindow** — container inspection: Logs (with timestamps), Inspect, Bind mounts, Exec, Stats tabs. Title shows container name. Image row has pencil-icon edit mode: fetches remote tags via `OciRegistryStore`, lets user pick/type a tag, writes the compose file, and calls `compose up -d` to recreate. Offline mode falls back to locally cached images.
 - **PortableModeWindow** — guided dialog to enable portable mode (shows data items to migrate with source→dest paths).
 - **LogWindow** — real-time log viewer subscribed to `InMemoryLogStore`.
 - **AboutWindow** — version info.
@@ -40,3 +40,4 @@ Main WPF dashboard for Crosspose. Provides a container/image/volume management i
 - `Crosspose.Dekompose.Gui` — output copied to bin dir (not assembly reference).
 - `FluentIcons.Wpf` — icon set.
 - Dark/light theme support via `Themes/Colors.Dark.xaml` and `Colors.Light.xaml`.
+- `ComposeOrchestrator` — passed to `ContainerDetailsWindow` for image tag apply.

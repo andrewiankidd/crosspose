@@ -23,7 +23,9 @@ Task<FixResult> FixAsync(ProcessRunner, ILogger, CancellationToken);
 
 ## Built-in Checks (CheckCatalog order)
 
-DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli (RequiresConnectivity), PodmanHealthcheckRunner (AutoFix), PodmanCreatedContainer (AutoFix), PodmanContainerAutoheal (AutoFix), WslToWindowsFirewall (AutoFix).
+DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, OrphanedPodmanNetwork (AutoFix), StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, StaleFirewallRule (AutoFix), Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli (RequiresConnectivity), PodmanHealthcheckRunner (AutoFix), PodmanCreatedContainer (AutoFix), PodmanContainerAutoheal (AutoFix), WslToWindowsFirewall (AutoFix).
+
+`WslCheck` uses internal cancellation timeouts and a 3-stage fix: `wsl --shutdown` (15s) → `net stop WslService/LxssManager` (15s) → `taskkill wslservice.exe/wsl.exe` (10s) → `wsl --install`.
 
 ## Additional Checks (enabled via config or `--enable-additional`)
 

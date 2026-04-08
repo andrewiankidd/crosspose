@@ -18,7 +18,7 @@
 
 ## Adding Dekompose Translation Rules
 
-Rules are defined in `crosspose.yml` under `dekompose.custom-rules` and loaded via `CrossposeEnvironment.GetDekomposeRules()`. Each `DekomposeRuleSet` can specify infrastructure definitions (e.g., MSSQL containers to scaffold) and secret mappings.
+Rules are defined in `crosspose.yml` under `dekompose.custom-rules` and loaded via `CrossposeEnvironment.GetDekomposeRules(chartName, tgzChartName)`. The second parameter matches against the tgz filename stem (e.g. `helm-platform` from `helm-platform-9.2.491.tgz`) so embedded `dekompose.yml` rules that use the product name rather than the internal Chart.yaml name still match. Each `DekomposeRuleSet` can specify infrastructure definitions (e.g., MSSQL containers to scaffold) and secret mappings. Charts may also ship their own rules as `<chartname>/crosspose/dekompose.yml` inside the tgz; `HelmClient.ExtractCrossposeFilesAsync` extracts these as sibling files automatically.
 
 ## Adding a CLI Command
 
