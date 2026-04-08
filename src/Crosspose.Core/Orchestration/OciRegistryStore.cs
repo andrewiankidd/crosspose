@@ -14,12 +14,29 @@ public sealed class OciRegistryStore
     private readonly CrossposeConfiguration _config;
     private readonly List<OciRegistryEntry> _registries;
 
+    // Shipped with Crosspose as a PoC / getting-started reference.
+    internal static readonly OciRegistryEntry HelloWorldDefault = new()
+    {
+        Name = "oci-ghcr-io-andrewiankidd-charts",
+        Address = "https://ghcr.io",
+        Filter = "andrewiankidd/charts/cross-platform-hello"
+    };
+
     public OciRegistryStore(ILogger logger)
     {
         _logger = logger;
         _config = CrossposeConfigurationStore.Load();
         _config.OciRegistries ??= new List<OciRegistryEntry>();
         _registries = _config.OciRegistries;
+        EnsureDefaults();
+    }
+
+    private void EnsureDefaults()
+    {
+        if (_registries.Any(r => r.Name.Equals(HelloWorldDefault.Name, StringComparison.OrdinalIgnoreCase)))
+            return;
+        _registries.Add(HelloWorldDefault);
+        Save();
     }
 
     public IReadOnlyList<OciRegistryEntry> GetAll() => _registries.ToList();
@@ -102,7 +119,7 @@ public sealed class OciRegistryStore
         return new List<string>();
     }
 
-    private static List<string> ApplyFilter(List<string> source, string? filter)
+    internal static List<string> ApplyFilter(List<string> source, string? filter)
     {
         if (source.Count == 0 || string.IsNullOrWhiteSpace(filter)) return source;
         return source
