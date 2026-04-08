@@ -63,17 +63,17 @@ Ten projects in `src/`, all under `Crosspose.sln`. Libraries hold reusable logic
 
 **Crosspose.Cli** — unified CLI. `ps` aggregates docker+podman containers. `compose`/`up`/`down`/`restart`/`stop`/`start`/`logs`/`top`/`ps` orchestrate across both platforms. `sources` manages Helm/OCI chart sources.
 
-**Crosspose.Doctor.Core** — prerequisite check library. `ICheckFix` interface (includes `RequiresConnectivity`, `AutoFix`, `CheckIntervalSeconds` default members), `CheckCatalog` with 21 built-in checks (DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli, PodmanHealthcheckRunner, PodmanCreatedContainer, PodmanContainerAutoheal, WslToWindowsFirewall). Supports additional checks via config. `offlineMode` parameter on `LoadAll` suppresses connectivity-requiring checks.
+**Crosspose.Doctor.Core** — prerequisite check library. `ICheckFix` interface (includes `RequiresConnectivity`, `AutoFix`, `CheckIntervalSeconds` default members), `CheckCatalog` with 23 built-in checks (DockerCompose, DockerRunning, DockerWindowsMode, HnsNatHealth, OrphanedDockerNetwork, OrphanedPodmanNetwork, StalePortProxyConfig, WSL, WslMemoryLimit, WslNetworkingMode, StalePortProxy, StaleFirewallRule, Sudo, CrossposeWsl, PodmanWsl, PodmanCgroup, PodmanComposeWsl, Helm, AzureCli, PodmanHealthcheckRunner, PodmanCreatedContainer, PodmanContainerAutoheal, WslToWindowsFirewall). Supports additional checks via config. `offlineMode` parameter on `LoadAll` suppresses connectivity-requiring checks. `WslCheck` uses internal timeouts with 3-stage fix (wsl --shutdown → net stop WslService → taskkill).
 
 **Crosspose.Doctor.Cli** — CLI entry point for Doctor. `--fix` triggers remediation. `--enable-additional` for extra checks.
 
-**Crosspose.Doctor.Gui** — WPF GUI for Doctor with per-item Fix buttons, Fix All window, offline mode amber banner, dark/light theme support.
+**Crosspose.Doctor.Gui** — WPF GUI for Doctor with per-item Fix buttons, Fix All window, offline mode amber banner, dark/light theme support. FixAllWindow and FixWindow show per-step timestamps, run a pre-check before each fix, and apply operation timeouts.
 
-**Crosspose.Gui** — main WPF dashboard. Sidebar: Charts, Compose Bundles, Projects, Containers, Images, Volumes. Tools menu: Doctor.Gui, Dekompose.Gui, offline mode toggle, portable mode enabler. View menu: dark/light theme toggle. Container details with live logs. Dark/light theme support.
+**Crosspose.Gui** — main WPF dashboard. Sidebar: Charts, Compose Bundles, Projects, Containers, Images, Volumes. Tools menu: Doctor.Gui, Dekompose.Gui, offline mode toggle, portable mode enabler. View menu: dark/light theme toggle. Container details with live logs, Inspect, Exec, Stats, and image tag editing (pencil icon → dropdown of remote tags → apply via `compose up -d`). Dark/light theme support.
 
 ## Key Patterns
 
-- All external tool execution goes through `ProcessRunner.RunAsync()` — never call `Process.Start()` directly.
+- All external tool execution goes through `ProcessRunner.RunAsync()` — never call `Process.Start()` directly. Cancellation uses `TrySetCanceled` in a `finally` block so timeouts always unblock; non-zero Win32 errors are caught and returned as failed `ProcessResult` rather than thrown.
 - CLI entry points use `CrossposeEnvironment.IsShellAvailable` to reject double-click launches.
 - Doctor checks follow the `ICheckFix` interface: `Name`, `Description`, `CanFix`, `IsAdditional`, `RequiresConnectivity`, `RunAsync`, `FixAsync`.
 - Configuration is centralized in `crosspose.yml` via `CrossposeConfigurationStore` / `CrossposeEnvironment`.

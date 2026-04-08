@@ -4,7 +4,7 @@ See also: [root CLAUDE.md](../../CLAUDE.md) | [Dekompose library](../Crosspose.D
 
 ## Purpose
 
-Thin CLI entry point for Dekompose. Parses args, reads chart metadata, invokes `HelmTemplateRunner` + `ComposeGenerator`, optionally compresses output.
+Thin CLI entry point for Dekompose. Parses args, reads chart metadata via `TryReadChartInfo` (matches only root-level `Chart.yaml` to avoid subchart names), invokes `HelmTemplateRunner` + `ComposeGenerator`, optionally compresses output. `ChartInfo` carries both the internal chart name and `TgzName` (derived from the tgz filename) so rule matching works against either.
 
 ## Arguments
 
