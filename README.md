@@ -4,6 +4,18 @@
 
 Crosspose is a Windows-first toolchain for turning Helm/Kubernetes workloads into runnable Docker Compose stacks and orchestrating them side-by-side on Docker Desktop (Windows containers) and Podman in WSL.
 
+## About
+
+Crosspose is a migration bridge designed to help teams adopt container technology gradually, without requiring a full Kubernetes infrastructure from day one. It is built around a clear exit strategy across three phases:
+
+| Phase | Description |
+|-------|-------------|
+| **Phase 1 — Full Crosspose** | Hybrid Windows/Linux container orchestration. Use when your workload includes Windows containers that cannot run on Linux Kubernetes. Crosspose brokers Docker Desktop and Podman side-by-side. |
+| **Phase 2 — Dekompose only** | Linux containers only; no Windows-specific tooling needed. Use Dekompose to convert Helm charts to compose files and run them with standard Docker or Podman. |
+| **Phase 3 — Native Helm/minikube** | Crosspose is no longer needed. Run the original Helm chart directly against a local cluster. |
+
+Each phase reduces dependency on Crosspose itself. The **Helm chart is the single source of truth throughout all phases** — the same chart that runs in production drives the local developer environment at every stage.
+
 ## Quick start (GUI)
 
 Open your IDE or terminal as **Administrator**, then:
@@ -22,6 +34,8 @@ Full worked example using the [cross-platform hello world chart](https://github.
 helm pull oci://ghcr.io/andrewiankidd/charts/cross-platform-hello --destination .
 
 # 2) Extract the crosspose config bundled inside the chart
+#    (optional — the chart embeds defaults; supply --values / --dekompose-config
+#    directly if you have your own files or want to override the bundled ones)
 tar -xzf cross-platform-hello-0.4.0.tgz cross-platform-hello/crosspose
 
 # 3) Dekompose — converts the Helm chart into OS-split compose files

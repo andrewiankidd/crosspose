@@ -1,24 +1,20 @@
 # Setup
 
-These prerequisites are needed for the CLI and GUI experiences:
+## Prerequisites
 
-## Windows features
-- **WSL**: Enable Windows Subsystem for Linux (`wsl --install`). Required for Podman support and the crosspose-data Alpine instance.
+The only thing you need to install manually is the [.NET SDK](https://dotnet.microsoft.com/download) (version 10 or later).
 
-## Container tooling
-- **Docker Desktop**: Provides Windows containers and docker compose. Needed for `docker compose`, `docker ps`, and Windows workloads.
-- **Podman** (inside WSL): For Linux containers when running side-by-side. Ensure `podman` is installed in your chosen WSL distro.
-- **docker-compose / docker compose**: Comes with Docker Desktop; required by Dekompose outputs.
+Everything else — WSL, Helm, Docker Desktop, Podman, port proxy configuration, and firewall rules — is handled automatically by **Crosspose Doctor**. Run it after cloning:
 
-## Helm and chart tooling
-- **Helm 3**: Required to render charts and fetch defaults (`helm repo list`, `helm search repo`, `helm show values`). Crosspose can auto-download helm if missing (HelmClient).
+```powershell
+dotnet run --project src/Crosspose.Doctor.Cli -- --fix
+```
 
-## Optional helpers
-- **winget**: Doctor uses it to install Docker Desktop and Helm when running with `--fix`.
-- **Windows port proxy**: Windows workloads that call Podman services require a `netsh interface portproxy` entry per exposed infra port. Crosspose.Doctor registers a `port-proxy:<port>@<network>` check automatically; run Doctor with `--fix` (or use the GUI) to create the bridge and matching firewall rule.
+Doctor checks all prerequisites, reports what is missing, and applies fixes where it can. Re-run it any time your environment drifts (e.g. after a Windows update or Docker Desktop upgrade).
 
 ## Configuration defaults
-Crosspose stores its shared defaults in `%APPDATA%\crosspose\crosspose.yml`. Customize the `compose.wsl` section if you need different credentials for the dedicated `crosspose-data` WSL distro that Doctor provisions.
+
+Crosspose stores its shared defaults in `%APPDATA%\crosspose\crosspose.yml`. Customise the `compose.wsl` section if you need different credentials for the dedicated `crosspose-data` WSL distro that Doctor provisions.
 
 If a `.portable` file exists beside the executable, Crosspose switches to portable mode and uses `.\AppData\crosspose` next to the EXE instead of `%APPDATA%`. Existing data is moved into the portable folder on first launch (when the target does not already exist).
 

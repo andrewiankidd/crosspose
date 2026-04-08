@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Formats.Tar;
 using System.Net.Http;
 using System.Text.Json;
 using Crosspose.Core.Diagnostics;
@@ -164,6 +165,56 @@ public sealed class HelmClient
         var after = Directory.GetFiles(destinationDir, "*.tgz");
         return after.FirstOrDefault(f => !before.Contains(f))
             ?? after.OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Extracts any <c>crosspose/values.yaml</c> and <c>crosspose/dekompose.yml</c> files
+    /// bundled inside a chart tgz, writing them as chart-named siblings so that
+    /// <c>FindChartSiblingFile</c> picks them up automatically. Existing sibling files are
+    /// not overwritten (user customisations take precedence).
+    /// </summary>
+    public async Task ExtractCrossposeFilesAsync(string tgzPath, CancellationToken cancellationToken = default)
+    {
+        var dir = Path.GetDirectoryName(tgzPath)!;
+        var baseName = Path.GetFileNameWithoutExtension(tgzPath);
+
+        try
+        {
+            await using var fs = File.OpenRead(tgzPath);
+            using var gz = new GZipStream(fs, CompressionMode.Decompress);
+            using var tar = new TarReader(gz);
+
+            TarEntry? entry;
+            while ((entry = tar.GetNextEntry()) != null)
+            {
+                var name = entry.Name.Replace('\\', '/');
+                var parts = name.Split('/');
+                if (parts.Length < 2) continue;
+                if (!parts[^2].Equals("crosspose", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var file = parts[^1];
+                string? suffix = null;
+                if (file.StartsWith("values", StringComparison.OrdinalIgnoreCase))
+                    suffix = ".values";
+                else if (file.StartsWith("dekompose", StringComparison.OrdinalIgnoreCase))
+                    suffix = ".dekompose";
+                if (suffix is null) continue;
+
+                var ext = Path.GetExtension(file); // .yaml or .yml
+                var destPath = Path.Combine(dir, baseName + suffix + ext);
+                if (File.Exists(destPath)) continue;
+
+                if (entry.DataStream is null) continue;
+                using var ms = new MemoryStream();
+                await entry.DataStream.CopyToAsync(ms, cancellationToken);
+                await File.WriteAllBytesAsync(destPath, ms.ToArray(), cancellationToken);
+                _logger.LogInformation("Extracted crosspose/{File} → {Dest}", file, Path.GetFileName(destPath));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to extract crosspose/ directory from {Tgz}", Path.GetFileName(tgzPath));
+        }
     }
 
     private IReadOnlyList<T> ParseArray<T>(string json)

@@ -5,7 +5,9 @@ using System.Text.RegularExpressions;
 using Crosspose.Core.Configuration;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging;
+using Crosspose.Core.Orchestration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Crosspose.Integration.Tests;
 
@@ -19,52 +21,19 @@ internal static class HelloWorldChart
     public static async Task<(string chartPath, string valuesPath, string dekomposeConfigPath)> PullAndExtractAsync(ProcessRunner runner)
     {
         var chartsDir = CrossposeEnvironment.HelmChartsDirectory;
-        Directory.CreateDirectory(chartsDir);
+        var helm = new HelmClient(runner, NullLogger.Instance);
 
-        var pull = await runner.RunAsync("helm", $"pull {ChartRef} --destination \"{chartsDir}\"");
-        Assert.True(pull.IsSuccess, $"Failed to pull chart: {pull.StandardError}");
-
-        var chartPath = Directory.GetFiles(chartsDir, "cross-platform-hello-*.tgz")
-            .OrderByDescending(File.GetLastWriteTime)
-            .FirstOrDefault();
+        var chartPath = await helm.PullAsync(ChartRef, version: null, chartsDir);
         Assert.NotNull(chartPath);
 
-        // Extract bundled crosspose config alongside the chart
-        var extract = await runner.RunAsync("tar",
-            $"-xzf \"{chartPath}\" -C \"{chartsDir}\" --strip-components=1 cross-platform-hello/crosspose");
+        await helm.ExtractCrossposeFilesAsync(chartPath);
 
-        if (!extract.IsSuccess)
-        {
-            // Fallback: full extract and copy
-            var tempDir = Path.Combine(Path.GetTempPath(), "crosspose-integration-test", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempDir);
-            await runner.RunAsync("tar", $"-xzf \"{chartPath}\" -C \"{tempDir}\"");
+        var baseName = Path.GetFileNameWithoutExtension(chartPath);
+        var valuesPath = Path.Combine(chartsDir, $"{baseName}.values.yaml");
+        var dekomposeConfigPath = Path.Combine(chartsDir, $"{baseName}.dekompose.yml");
 
-            var crossposeDir = Path.Combine(chartsDir, "crosspose");
-            Directory.CreateDirectory(crossposeDir);
-            foreach (var file in Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories)
-                         .Where(f => f.Contains("crosspose", StringComparison.OrdinalIgnoreCase) &&
-                                     (f.EndsWith(".yaml") || f.EndsWith(".yml"))))
-            {
-                File.Copy(file, Path.Combine(crossposeDir, Path.GetFileName(file)), overwrite: true);
-            }
-            try { Directory.Delete(tempDir, true); } catch { }
-        }
-
-        var chartBaseName = Path.GetFileNameWithoutExtension(chartPath);
-        var srcDir = Path.Combine(chartsDir, "crosspose");
-
-        var valuesPath = Path.Combine(chartsDir, $"{chartBaseName}.values.yaml");
-        var dekomposeConfigPath = Path.Combine(chartsDir, $"{chartBaseName}.dekompose.yml");
-
-        var srcValues = Directory.GetFiles(srcDir, "values.yaml", SearchOption.AllDirectories).FirstOrDefault();
-        var srcDekompose = Directory.GetFiles(srcDir, "dekompose.yml", SearchOption.AllDirectories).FirstOrDefault();
-
-        Assert.NotNull(srcValues);
-        Assert.NotNull(srcDekompose);
-
-        File.Copy(srcValues, valuesPath, overwrite: true);
-        File.Copy(srcDekompose, dekomposeConfigPath, overwrite: true);
+        Assert.True(File.Exists(valuesPath), $"crosspose/values.yaml not found in chart — expected {valuesPath}");
+        Assert.True(File.Exists(dekomposeConfigPath), $"crosspose/dekompose.yml not found in chart — expected {dekomposeConfigPath}");
 
         return (chartPath, valuesPath, dekomposeConfigPath);
     }
