@@ -18,6 +18,8 @@
     <SolidColorBrush x:Key="ButtonDisabledForeground" Color="#9CA3AF" />
     <SolidColorBrush x:Key="ButtonDisabledBorder" Color="#D8DDE5" />
     <SolidColorBrush x:Key="AccentPositive" Color="#16A34A" />
+    <SolidColorBrush x:Key="AccentBlue" Color="#2563EB" />
+    <SolidColorBrush x:Key="AccentDestructive" Color="#DC2626" />
 
     <!-- Lists -->
     <SolidColorBrush x:Key="ListBackground" Color="#FFFFFF" />
