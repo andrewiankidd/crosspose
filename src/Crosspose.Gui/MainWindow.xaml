@@ -523,25 +523,57 @@
                                     <GridViewColumn Header="Status" Width="110">
                                         <GridViewColumn.CellTemplate>
                                             <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Ellipse Width="12" Height="12" Margin="0,0,6,0">
-                                                        <Ellipse.Style>
-                                                            <Style TargetType="Ellipse">
-                                                                <Setter Property="Fill" Value="{Binding EffectiveState, Converter={StaticResource StatusBrushConverter}}" />
-                                                                <Setter Property="Stroke" Value="Transparent" />
-                                                                <Setter Property="StrokeThickness" Value="0" />
+                                                <Grid>
+                                                    <!-- Normal state: status dot + text -->
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <StackPanel.Style>
+                                                            <Style TargetType="StackPanel">
+                                                                <Setter Property="Visibility" Value="Visible" />
                                                                 <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding ExitState}" Value="{x:Static local:ContainerExitState.ExitedSuccess}">
-                                                                        <Setter Property="Fill" Value="Transparent" />
-                                                                        <Setter Property="Stroke" Value="{StaticResource SuccessStrokeBrush}" />
-                                                                        <Setter Property="StrokeThickness" Value="2" />
+                                                                    <DataTrigger Binding="{Binding IsPulling}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
-                                                        </Ellipse.Style>
-                                                    </Ellipse>
-                                                    <TextBlock Text="{Binding DisplayState}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                                                </StackPanel>
+                                                        </StackPanel.Style>
+                                                        <Ellipse Width="12" Height="12" Margin="0,0,6,0">
+                                                            <Ellipse.Style>
+                                                                <Style TargetType="Ellipse">
+                                                                    <Setter Property="Fill" Value="{Binding EffectiveState, Converter={StaticResource StatusBrushConverter}}" />
+                                                                    <Setter Property="Stroke" Value="Transparent" />
+                                                                    <Setter Property="StrokeThickness" Value="0" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding ExitState}" Value="{x:Static local:ContainerExitState.ExitedSuccess}">
+                                                                            <Setter Property="Fill" Value="Transparent" />
+                                                                            <Setter Property="Stroke" Value="{StaticResource SuccessStrokeBrush}" />
+                                                                            <Setter Property="StrokeThickness" Value="2" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Ellipse.Style>
+                                                        </Ellipse>
+                                                        <TextBlock Text="{Binding DisplayState}" VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                                                    </StackPanel>
+                                                    <!-- Pulling state: progress bar -->
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <StackPanel.Style>
+                                                            <Style TargetType="StackPanel">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsPulling}" Value="True">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </StackPanel.Style>
+                                                        <ProgressBar Width="60" Height="8" Minimum="0" Maximum="100"
+                                                                     Value="{Binding PullProgress}"
+                                                                     IsIndeterminate="{Binding IsPullIndeterminate}"
+                                                                     Margin="0,0,5,0" />
+                                                        <TextBlock Text="{Binding PullProgressText}" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource TextMuted}" FontSize="10" />
+                                                    </StackPanel>
+                                                </Grid>
                                             </DataTemplate>
                                         </GridViewColumn.CellTemplate>
                                     </GridViewColumn>

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -42,6 +43,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private Task _refreshTask = Task.CompletedTask;
     private ProjectEntry? _selectedProjectEntry;
     private DeploymentRow? _selectedDeploymentRow;
+
+    // Pull progress tracking
+    private readonly ConcurrentDictionary<string, (double Current, double Total)> _pullLayers = new();
+    private ContainerRow? _pullPlaceholder;
+    private string? _pullingProject;
+    private static readonly Regex PullProgressRegex = new(
+        @"([0-9a-f]{8,12})\s+\S+.*?([\d.]+)(KB|MB|GB|TB|B)\/([\d.]+)(KB|MB|GB|TB|B)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     // Doctor status indicator
     private enum DoctorPollState { Unknown, Checking, Ready, NeedsAttention }
@@ -88,6 +97,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Title = AppDataLocator.WithPortableSuffix(Title);
         _logStore = new InMemoryLogStore();
         _logStore.OnWrite += _ => OnPropertyChanged(nameof(LogOutput));
+        _logStore.OnWrite += OnPullLogWrite;
         _loggerFactory = Crosspose.Core.Logging.CrossposeLoggerFactory.Create(LogLevel.Information, _logStore);
         _logger = _loggerFactory.CreateLogger("crosspose.gui");
 
@@ -513,6 +523,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var expansion = ContainerGroups.ToDictionary(p => p.Name, p => p.IsExpanded, StringComparer.OrdinalIgnoreCase);
             ContainerGroups.Clear();
             AllContainers.Clear();
+            _pullPlaceholder = null;
             foreach (var group in grouped)
             {
                 var displayName = string.IsNullOrWhiteSpace(group.Key) ? "(unassigned)" : group.Key;
@@ -527,6 +538,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     AllContainers.Add(row);
                 }
                 ContainerGroups.Add(pg);
+            }
+
+            // Re-inject pull placeholder if a compose up is still in progress
+            if (_pullingProject is not null)
+            {
+                _pullPlaceholder = CreatePullPlaceholder(_pullingProject);
+                AllContainers.Add(_pullPlaceholder);
             }
 
             OnPropertyChanged(nameof(LogOutput));
@@ -1963,6 +1981,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task ExecuteDeploymentActionAsync(DeploymentRow row, ComposeAction action)
     {
+        if (action == ComposeAction.Up)
+        {
+            _pullLayers.Clear();
+            _pullingProject = row.Project;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                _pullPlaceholder = CreatePullPlaceholder(row.Project);
+                AllContainers.Add(_pullPlaceholder);
+            });
+        }
+
         ComposeExecutionResult? executionResult = null;
         try
         {
@@ -1993,6 +2022,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _logger.LogError(ex, "Compose action {Action} failed for deployment {Path}", action, row.FullPath);
             MessageBox.Show(this, $"Compose action '{action.ToCommand()}' failed.\n\n{ex.Message}", "Crosspose", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            if (action == ComposeAction.Up)
+                _pullingProject = null;
         }
 
         if (executionResult is not null)
@@ -2087,6 +2121,66 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return (folderName[..idx], folderName[(idx + 1)..]);
         }
         return (folderName, "unknown");
+    }
+
+    private void OnPullLogWrite(string line)
+    {
+        if (_pullingProject is null) return;
+        var match = PullProgressRegex.Match(line);
+        if (!match.Success) return;
+
+        var layerId = match.Groups[1].Value.ToLowerInvariant();
+        if (!double.TryParse(match.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var current)) return;
+        if (!double.TryParse(match.Groups[4].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var total)) return;
+
+        current = ToBytes(current, match.Groups[3].Value);
+        total = ToBytes(total, match.Groups[5].Value);
+        _pullLayers[layerId] = (current, total);
+
+        var totalCurrent = _pullLayers.Values.Sum(v => v.Current);
+        var totalTotal = _pullLayers.Values.Sum(v => v.Total);
+        var progress = totalTotal > 0 ? totalCurrent / totalTotal * 100.0 : -1.0;
+        var bytesText = totalTotal > 0 ? $"{FormatBytes(totalCurrent)} / {FormatBytes(totalTotal)}" : "";
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_pullPlaceholder is null) return;
+            _pullPlaceholder.PullProgress = progress;
+            if (!string.IsNullOrEmpty(bytesText)) _pullPlaceholder.Image = bytesText;
+        });
+    }
+
+    private static double ToBytes(double value, string unit) => unit.ToUpperInvariant() switch
+    {
+        "KB" => value * 1024,
+        "MB" => value * 1024 * 1024,
+        "GB" => value * 1024 * 1024 * 1024,
+        "TB" => value * 1024 * 1024 * 1024 * 1024,
+        _ => value
+    };
+
+    private static string FormatBytes(double bytes)
+    {
+        if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824:F1} GB";
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576:F0} MB";
+        if (bytes >= 1024) return $"{bytes / 1024:F0} KB";
+        return $"{bytes:F0} B";
+    }
+
+    private ContainerRow CreatePullPlaceholder(string project)
+    {
+        var totalCurrent = _pullLayers.Values.Sum(v => v.Current);
+        var totalTotal = _pullLayers.Values.Sum(v => v.Total);
+        var placeholder = new ContainerRow
+        {
+            Id = "Pulling images...",
+            Image = totalTotal > 0 ? $"{FormatBytes(totalCurrent)} / {FormatBytes(totalTotal)}" : "",
+            Project = project,
+            State = "pulling",
+            IsPulling = true,
+            PullProgress = totalTotal > 0 ? totalCurrent / totalTotal * 100.0 : -1,
+        };
+        return placeholder;
     }
 
     private void AppendComposeLog(ComposeExecutionResult result)
@@ -2508,6 +2602,32 @@ public class ContainerRow : INotifyPropertyChanged
     }
 
     public string ActionLabel => IsRunning ? "Stop" : "Start";
+
+    private bool _isPulling;
+    public bool IsPulling
+    {
+        get => _isPulling;
+        set { if (_isPulling != value) { _isPulling = value; OnPropertyChanged(nameof(IsPulling)); } }
+    }
+
+    private double _pullProgress = -1;
+    public double PullProgress
+    {
+        get => _pullProgress;
+        set
+        {
+            if (Math.Abs(_pullProgress - value) > 0.01)
+            {
+                _pullProgress = value;
+                OnPropertyChanged(nameof(PullProgress));
+                OnPropertyChanged(nameof(IsPullIndeterminate));
+                OnPropertyChanged(nameof(PullProgressText));
+            }
+        }
+    }
+
+    public bool IsPullIndeterminate => _pullProgress < 0;
+    public string PullProgressText => _pullProgress < 0 ? "Pulling..." : $"{_pullProgress:F0}%";
 
     private bool _isSelected;
     public bool IsSelected
