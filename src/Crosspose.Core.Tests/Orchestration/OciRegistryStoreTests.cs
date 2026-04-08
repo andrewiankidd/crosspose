@@ -1,4 +1,5 @@
 using Crosspose.Core.Orchestration;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Crosspose.Core.Tests.Orchestration;
 
@@ -26,66 +27,39 @@ public class OciRegistryStoreTests
         Assert.Null(OciRegistryStore.HelloWorldDefault.BearerToken);
     }
 
-    // --- ApplyFilter: hello world filter specificity ---
+    // --- ListChartsAsync: exact-filter shortcut (no catalog call) ---
 
     [Fact]
-    public void ApplyFilter_HelloWorldFilter_MatchesHelloWorldChart()
+    public async Task ListChartsAsync_ExactFilter_ReturnsFilterDirectly()
     {
-        var repos = new List<string> { "andrewiankidd/charts/cross-platform-hello" };
-        var result = OciRegistryStore.ApplyFilter(repos, OciRegistryStore.HelloWorldDefault.Filter);
-        Assert.Single(result);
-        Assert.Equal("andrewiankidd/charts/cross-platform-hello", result[0]);
-    }
-
-    [Fact]
-    public void ApplyFilter_HelloWorldFilter_ExcludesOtherChartsFromSameRegistry()
-    {
-        var repos = new List<string>
+        var entry = new OciRegistryEntry
         {
-            "andrewiankidd/charts/cross-platform-hello",
-            "andrewiankidd/charts/some-other-chart",
-            "andrewiankidd/charts/another-chart",
+            Name = "test",
+            Address = "https://ghcr.io",
+            Filter = "andrewiankidd/charts/cross-platform-hello"
         };
-        var result = OciRegistryStore.ApplyFilter(repos, OciRegistryStore.HelloWorldDefault.Filter);
+
+        var store = new OciRegistryStore(NullLogger.Instance);
+        var result = await store.ListChartsAsync(entry);
+
         Assert.Single(result);
         Assert.Equal("andrewiankidd/charts/cross-platform-hello", result[0]);
     }
 
     [Fact]
-    public void ApplyFilter_HelloWorldFilter_ExcludesUnrelatedRegistries()
+    public async Task ListChartsAsync_WildcardFilter_HitsCatalog()
     {
-        var repos = new List<string>
+        // A wildcard filter goes through the catalog — not short-circuited.
+        var entry = new OciRegistryEntry
         {
-            "someoneelse/charts/cross-platform-hello",
-            "andrewiankidd/charts/cross-platform-hello",
+            Name = "test",
+            Address = "https://ghcr.io",
+            Filter = "andrewiankidd/charts/*"
         };
-        var result = OciRegistryStore.ApplyFilter(repos, OciRegistryStore.HelloWorldDefault.Filter);
-        Assert.Single(result);
-        Assert.Equal("andrewiankidd/charts/cross-platform-hello", result[0]);
-    }
 
-    // --- ApplyFilter: general behaviour ---
+        var store = new OciRegistryStore(NullLogger.Instance);
+        var result = await store.ListChartsAsync(entry);
 
-    [Fact]
-    public void ApplyFilter_NullFilter_ReturnsAll()
-    {
-        var repos = new List<string> { "a/b", "c/d" };
-        var result = OciRegistryStore.ApplyFilter(repos, null);
-        Assert.Equal(2, result.Count);
-    }
-
-    [Fact]
-    public void ApplyFilter_EmptySource_ReturnsEmpty()
-    {
-        var result = OciRegistryStore.ApplyFilter(new List<string>(), "anything");
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void ApplyFilter_IsCaseInsensitive()
-    {
-        var repos = new List<string> { "Andrewiankidd/Charts/Cross-Platform-Hello" };
-        var result = OciRegistryStore.ApplyFilter(repos, OciRegistryStore.HelloWorldDefault.Filter);
-        Assert.Single(result);
+        Assert.DoesNotContain("andrewiankidd/charts/*", result);
     }
 }

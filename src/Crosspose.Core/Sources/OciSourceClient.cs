@@ -112,6 +112,16 @@ public sealed class OciSourceClient : ISourceClient
 
     public async Task<SourceListResult> ListAsync(SourceAuth? auth = null, CancellationToken cancellationToken = default)
     {
+        // If the filter is an exact repo path (no wildcards), skip the catalog endpoint.
+        // Registries like GHCR restrict catalog access but allow public per-repo access,
+        // so when we already know the path there is nothing to discover.
+        if (!string.IsNullOrWhiteSpace(NameFilter) &&
+            !NameFilter.Contains('*') && !NameFilter.Contains('?'))
+        {
+            var chart = new SourceChart(NameFilter);
+            return new SourceListResult(true, new[] { chart }, null);
+        }
+
         var catalogUrl = SourceUrl.TrimEnd('/') + "/v2/_catalog";
         Logger.LogInformation("OCI listing GET {Url}", catalogUrl);
         var (repos, error) = await ListAllPagedAsync(catalogUrl, auth, cancellationToken);
@@ -169,22 +179,84 @@ public sealed class OciSourceClient : ISourceClient
             return resp;
         }
 
-        if (!IsAzureContainerRegistry(SourceUrl))
+        if (IsAzureContainerRegistry(SourceUrl))
         {
-            return resp;
+            Logger.LogInformation("OCI catalog unauthorized, attempting ACR scoped token acquisition.");
+            var bearer = await TryAcquireAcrScopedTokenAsync("registry:catalog:*", ct);
+            if (string.IsNullOrWhiteSpace(bearer))
+            {
+                return resp;
+            }
+
+            using var retryReq = new HttpRequestMessage(HttpMethod.Get, url);
+            SourceAuthHelper.ApplyAuth(retryReq, new SourceAuth(null, null, bearer));
+            return await Http.SendAsync(retryReq, ct);
         }
 
-        Logger.LogInformation("OCI catalog unauthorized, attempting ACR scoped token acquisition.");
-        var bearer = await TryAcquireAcrScopedTokenAsync("registry:catalog:*", ct);
-        if (string.IsNullOrWhiteSpace(bearer))
+        // Non-ACR registries (e.g. GHCR) may return 401 even for public repos.
+        // Attempt an anonymous Bearer token exchange via the WWW-Authenticate challenge.
+        var anonymousBearer = await TryAcquireAnonymousBearerTokenAsync(resp, ct);
+        if (!string.IsNullOrWhiteSpace(anonymousBearer))
         {
-            return resp;
+            using var retryReq = new HttpRequestMessage(HttpMethod.Get, url);
+            SourceAuthHelper.ApplyAuth(retryReq, new SourceAuth(null, null, anonymousBearer));
+            return await Http.SendAsync(retryReq, ct);
         }
 
-        using var retryReq = new HttpRequestMessage(HttpMethod.Get, url);
-        SourceAuthHelper.ApplyAuth(retryReq, new SourceAuth(null, null, bearer));
-        var retryResp = await Http.SendAsync(retryReq, ct);
-        return retryResp;
+        return resp;
+    }
+
+    /// <summary>
+    /// Parses the WWW-Authenticate Bearer challenge from a 401 response and fetches
+    /// an anonymous token from the registry's token endpoint. Returns null if the
+    /// challenge is absent or the token fetch fails.
+    /// </summary>
+    private async Task<string?> TryAcquireAnonymousBearerTokenAsync(HttpResponseMessage unauthorizedResp, CancellationToken ct)
+    {
+        try
+        {
+            var wwwAuth = unauthorizedResp.Headers.WwwAuthenticate.FirstOrDefault();
+            if (wwwAuth is null || !string.Equals(wwwAuth.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            // Parse: Bearer realm="...",service="...",scope="..."
+            var param = wwwAuth.Parameter ?? string.Empty;
+            var realm = ExtractWwwAuthParam(param, "realm");
+            var service = ExtractWwwAuthParam(param, "service");
+            var scope = ExtractWwwAuthParam(param, "scope");
+
+            if (string.IsNullOrWhiteSpace(realm)) return null;
+
+            var tokenUrl = realm;
+            var sep = '?';
+            if (!string.IsNullOrWhiteSpace(service)) { tokenUrl += $"{sep}service={Uri.EscapeDataString(service)}"; sep = '&'; }
+            if (!string.IsNullOrWhiteSpace(scope))   { tokenUrl += $"{sep}scope={Uri.EscapeDataString(scope)}"; }
+
+            Logger.LogInformation("Attempting anonymous token exchange at {Url}", tokenUrl);
+            var tokenResp = await Http.GetAsync(tokenUrl, ct);
+            if (!tokenResp.IsSuccessStatusCode) return null;
+
+            var json = await tokenResp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("token", out var tokenProp))
+                return tokenProp.GetString();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Anonymous Bearer token exchange failed.");
+        }
+
+        return null;
+    }
+
+    internal static string? ExtractWwwAuthParam(string param, string key)
+    {
+        var search = key + "=\"";
+        var start = param.IndexOf(search, StringComparison.OrdinalIgnoreCase);
+        if (start < 0) return null;
+        start += search.Length;
+        var end = param.IndexOf('"', start);
+        return end < 0 ? null : param[start..end];
     }
 
     private async Task<(string Body, string? ContentType)?> GetManifestAsync(string repository, string tag, SourceAuth? auth, CancellationToken ct)
@@ -285,6 +357,13 @@ public sealed class OciSourceClient : ISourceClient
 
     private async Task<string?> GetLatestTagAsync(string repository, SourceAuth? auth, CancellationToken ct)
     {
+        if (!IsAzureContainerRegistry(SourceUrl))
+        {
+            // Standard OCI: /v2/{repo}/tags/list — no server-side date ordering, take last entry.
+            var tags = await ListAllTagsOciAsync(repository, auth, ct);
+            return tags.Versions.LastOrDefault()?.Tag;
+        }
+
         var encodedRepo = Uri.EscapeDataString(repository);
         var url = $"{SourceUrl.TrimEnd('/')}/acr/v1/{encodedRepo}/_tags?orderby=timedesc&n=1";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
@@ -315,7 +394,25 @@ public sealed class OciSourceClient : ISourceClient
     {
         SourceAuthHelper.ApplyAuth(request, auth);
         var resp = await Http.SendAsync(request, ct);
-        if (resp.IsSuccessStatusCode || !IsAzureContainerRegistry(SourceUrl))
+        if (resp.IsSuccessStatusCode)
+            return resp;
+
+        if (resp.StatusCode == HttpStatusCode.Unauthorized && !IsAzureContainerRegistry(SourceUrl))
+        {
+            var anonymousBearer = await TryAcquireAnonymousBearerTokenAsync(resp, ct);
+            if (!string.IsNullOrWhiteSpace(anonymousBearer))
+            {
+                using var retry = new HttpRequestMessage(request.Method, request.RequestUri);
+                foreach (var h in request.Headers)
+                    retry.Headers.TryAddWithoutValidation(h.Key, h.Value);
+                SourceAuthHelper.ApplyAuth(retry, new SourceAuth(null, null, anonymousBearer));
+                var retryResp = await Http.SendAsync(retry, ct);
+                return requireSuccess && !retryResp.IsSuccessStatusCode ? null : retryResp;
+            }
+            return requireSuccess ? null : resp;
+        }
+
+        if (!IsAzureContainerRegistry(SourceUrl))
         {
             return requireSuccess && !resp.IsSuccessStatusCode ? null : resp;
         }
@@ -410,11 +507,16 @@ public sealed class OciSourceClient : ISourceClient
         return (collected, null);
     }
 
-    private async Task<(IReadOnlyList<SourceVersion> Versions, string? Error)> ListAllTagsAsync(string repository, SourceAuth? auth, CancellationToken ct)
+    private Task<(IReadOnlyList<SourceVersion> Versions, string? Error)> ListAllTagsAsync(string repository, SourceAuth? auth, CancellationToken ct) =>
+        IsAzureContainerRegistry(SourceUrl)
+            ? ListAllTagsAcrAsync(repository, auth, ct)
+            : ListAllTagsOciAsync(repository, auth, ct);
+
+    private async Task<(IReadOnlyList<SourceVersion> Versions, string? Error)> ListAllTagsAcrAsync(string repository, SourceAuth? auth, CancellationToken ct)
     {
         // Proactively acquire the repo-scoped bearer for ACR so every pagination page
         // uses it directly instead of round-tripping through a 401 first.
-        if (IsAzureContainerRegistry(SourceUrl) && string.IsNullOrWhiteSpace(auth?.BearerToken))
+        if (string.IsNullOrWhiteSpace(auth?.BearerToken))
         {
             var bearer = await TryAcquireAcrScopedTokenAsync($"repository:{repository}:metadata_read", ct);
             if (!string.IsNullOrWhiteSpace(bearer))
@@ -431,16 +533,12 @@ public sealed class OciSourceClient : ISourceClient
             req.Headers.TryAddWithoutValidation("Accept", "application/json");
             var resp = await SendRepositoryRequestAsync(repository, req, auth, ct, requireSuccess: true);
             if (resp is null)
-            {
                 return (Array.Empty<SourceVersion>(), $"Tag listing failed for {repository}.");
-            }
 
             var body = await resp.Content.ReadAsStringAsync(ct);
             Logger.LogInformation("OCI tag listing status {Status} for {Repo}", resp.StatusCode, repository);
             if (!resp.IsSuccessStatusCode)
-            {
                 return (Array.Empty<SourceVersion>(), $"Tag listing failed with status {(int)resp.StatusCode}.");
-            }
 
             try
             {
@@ -456,14 +554,54 @@ public sealed class OciSourceClient : ISourceClient
                         if (tagEl.TryGetProperty("createdTime", out var createdEl) && createdEl.ValueKind != JsonValueKind.Null)
                         {
                             if (DateTimeOffset.TryParse(createdEl.GetString(), out var parsed))
-                            {
                                 created = parsed;
-                            }
                         }
                         collected.Add(new SourceVersion(tag, digest, created));
                     }
                 }
+                nextUrl = ResolveNextUrl(resp, doc);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to parse tag listing for {Repo}. Body: {Body}", repository, body);
+                return (Array.Empty<SourceVersion>(), "Failed to parse tag listing.");
+            }
+        }
 
+        return (collected, null);
+    }
+
+    private async Task<(IReadOnlyList<SourceVersion> Versions, string? Error)> ListAllTagsOciAsync(string repository, SourceAuth? auth, CancellationToken ct)
+    {
+        var collected = new List<SourceVersion>();
+        var encodedRepo = Uri.EscapeDataString(repository);
+        var nextUrl = $"{SourceUrl.TrimEnd('/')}/v2/{encodedRepo}/tags/list?n=100";
+
+        while (nextUrl is not null)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, nextUrl);
+            req.Headers.TryAddWithoutValidation("Accept", "application/json");
+            var resp = await SendRepositoryRequestAsync(repository, req, auth, ct, requireSuccess: true);
+            if (resp is null)
+                return (Array.Empty<SourceVersion>(), $"Tag listing failed for {repository}.");
+
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            Logger.LogInformation("OCI tag listing status {Status} for {Repo}", resp.StatusCode, repository);
+            if (!resp.IsSuccessStatusCode)
+                return (Array.Empty<SourceVersion>(), $"Tag listing failed with status {(int)resp.StatusCode}.");
+
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var tagEl in tags.EnumerateArray())
+                    {
+                        var tag = tagEl.GetString();
+                        if (string.IsNullOrWhiteSpace(tag)) continue;
+                        collected.Add(new SourceVersion(tag, null, null));
+                    }
+                }
                 nextUrl = ResolveNextUrl(resp, doc);
             }
             catch (Exception ex)
@@ -720,7 +858,7 @@ public sealed class OciSourceClient : ISourceClient
         }
     }
 
-    private static IReadOnlyList<string> ApplyFilter(IReadOnlyList<string> source, string? filter)
+    internal static IReadOnlyList<string> ApplyFilter(IReadOnlyList<string> source, string? filter)
     {
         if (source.Count == 0 || string.IsNullOrWhiteSpace(filter)) return source;
         return source
