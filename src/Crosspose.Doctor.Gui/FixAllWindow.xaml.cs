@@ -44,20 +44,53 @@ public partial class FixAllWindow : Window
 
             try
             {
-                var result = await check.FixAsync(runner, _loggerFactory.CreateLogger(check.Name), default);
-                AppendLine("");
-                AppendLine(result.Message);
+                // Re-verify before fixing — a prior fix in this run (e.g. WSL restart) may have
+                // already resolved this condition. Skip fixes whose check now passes.
+                // A timeout on the pre-check is treated as failure (still needs fixing).
+                bool needsFix;
+                try
+                {
+                    using var checkCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                    var current = await check.RunAsync(runner, _loggerFactory.CreateLogger(check.Name), checkCts.Token);
+                    if (current.IsSuccessful)
+                    {
+                        AppendLine("Check already passing — skipped.");
+                        AppendLine("Result: SKIPPED");
+                        succeeded++;
+                        AppendLine("");
+                        continue;
+                    }
+                    needsFix = true;
+                }
+                catch (OperationCanceledException)
+                {
+                    AppendLine("Pre-check timed out — proceeding with fix.");
+                    needsFix = true;
+                }
 
-                if (result.Succeeded)
+                if (needsFix)
                 {
-                    AppendLine("Result: OK");
-                    succeeded++;
+                    using var fixCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                    var result = await check.FixAsync(runner, _loggerFactory.CreateLogger(check.Name), fixCts.Token);
+                    AppendLine("");
+                    AppendLine(result.Message);
+
+                    if (result.Succeeded)
+                    {
+                        AppendLine("Result: OK");
+                        succeeded++;
+                    }
+                    else
+                    {
+                        AppendLine("Result: FAILED");
+                        failed.Add(check.Name);
+                    }
                 }
-                else
-                {
-                    AppendLine("Result: FAILED");
-                    failed.Add(check.Name);
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                AppendLine("Result: TIMED OUT");
+                failed.Add(check.Name);
             }
             catch (Exception ex)
             {
@@ -88,9 +121,10 @@ public partial class FixAllWindow : Window
 
     private void AppendLine(string line)
     {
+        var ts = DateTime.Now.ToString("HH:mm:ss");
         Dispatcher.Invoke(() =>
         {
-            _buffer.AppendLine(line);
+            _buffer.AppendLine($"[{ts}] {line}");
             OutputBox.Text = _buffer.ToString();
             OutputBox.ScrollToEnd();
         });

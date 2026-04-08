@@ -17,6 +17,7 @@ public static class CheckCatalog
             new DockerWindowsModeCheck(),
             new HnsNatHealthCheck(),
             new OrphanedDockerNetworkCheck(),
+            new OrphanedPodmanNetworkCheck(),
             new StalePortProxyConfigCheck(),
             new WslCheck(),
             new WslMemoryLimitCheck(),

@@ -117,6 +117,12 @@ public sealed class ProcessRunner
                 {
                     _logger.LogWarning(ex, "Failed to cancel process {Command}", command);
                 }
+                finally
+                {
+                    // Whether or not Kill succeeded, unblock the await below.
+                    // If the process does exit later, TrySetResult is a no-op.
+                    exitCompletion.TrySetCanceled(cancellationToken);
+                }
             });
 
             var exitCode = await exitCompletion.Task.ConfigureAwait(false);
