@@ -69,6 +69,37 @@ View model classes (`ContainerRow`, `ProjectGroupRow`, `ImageRow`, `VolumeRow`, 
 
 ---
 
+### `ConfigureAwait(false)` missing in library code
+
+`Crosspose.Doctor.Core` and `Crosspose.Dekompose.Core` are library projects called from both GUI and CLI entry points. Awaits in these projects do not use `.ConfigureAwait(false)`, meaning continuations capture the caller's synchronization context unnecessarily. Not a correctness bug in current usage but violates library best practice and can cause subtle deadlocks if the caller changes.
+
+**Files**: `AzureAcrAuthLinCheck.cs`, `AzureAcrAuthWinCheck.cs`, `AzureCliCheck.cs`, `CrossposeWslCheck.cs` (Doctor.Core); `ComposeGenerator.cs`, `HelmTemplateRunner.cs` (Dekompose.Core). All `await` calls without `.ConfigureAwait(false)`.
+
+**Fix**: Mechanical — add `.ConfigureAwait(false)` to every `await` in these files. No logic change.
+
+---
+
+### Business logic in `ContainerDetailsWindow` code-behind
+
+`ContainerDetailsWindow.xaml.cs` contains two pieces of business logic that belong in `Crosspose.Core`:
+
+1. **`ParseImageRef`** (`ContainerDetailsWindow.xaml.cs:423`) — parses a Docker image string into `(registry, repo, tag)`. Pure business logic, no WPF dependency.
+2. **Compose file patching** (`ContainerDetailsWindow.xaml.cs:355-363`) — iterates compose files, finds the old image string, replaces it, and writes back. Also uses synchronous `File.ReadAllText`/`File.WriteAllText` on the UI thread.
+
+**Fix**: Move `ParseImageRef` to `Crosspose.Core.Orchestration` (alongside `ComposeProjectLoader`). Extract compose file patching into a method on `DefinitionDeploymentService` or a new static helper in `Crosspose.Core.Deployment`, using `async` file I/O.
+
+---
+
+### `Process.Start()` in `AzureAcrAuthWinCheck`
+
+`AzureAcrAuthWinCheck.FixAsync` calls `Process.Start()` directly at line 139, bypassing `ProcessRunner`. This is the only Doctor check that does not use the injected `ProcessRunner` for process spawning, so the call has no cancellation support, no output capture, and no error handling consistency.
+
+**File**: `src/Crosspose.Doctor.Core/Checks/AzureAcrAuthWinCheck.cs:139`
+
+**Fix**: Replace with `await runner.RunAsync(...)` — `runner` is already a parameter of `FixAsync`.
+
+---
+
 ### Duplicate firewall rules accumulate
 
 `PortProxyCheck.FixAsync` adds `netsh advfirewall firewall add rule` on every fix run but never checks if the rule already exists. Firewall `add` silently creates duplicates (unlike portproxy `add` which updates). Over time, hundreds of identical rules accumulate. The fix should check for existing rules by name before adding, or delete-then-add.

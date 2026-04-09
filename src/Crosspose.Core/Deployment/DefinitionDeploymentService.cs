@@ -14,7 +14,7 @@ public sealed class DefinitionDeploymentRequest
     public string SourcePath { get; init; } = string.Empty;
     public string BaseDirectory { get; init; } = string.Empty;
     public string ProjectName { get; init; } = string.Empty;
-    public string? Version { get; init; }
+    public string? ChartVersion { get; init; }
 }
 
 public sealed class DefinitionDeploymentResult
@@ -36,21 +36,18 @@ public sealed class DefinitionDeploymentService
         var deploymentRoot = Path.GetFullPath(request.BaseDirectory);
         Directory.CreateDirectory(deploymentRoot);
 
-        var projectSegment = SanitizeSegment(request.ProjectName);
-        var versionSegment = SanitizeSegment(request.Version);
-        if (string.IsNullOrWhiteSpace(versionSegment)
-            || versionSegment.Equals("unknown", StringComparison.OrdinalIgnoreCase)
-            || versionSegment.Equals("default", StringComparison.OrdinalIgnoreCase))
+        // Sanitize to compose-compatible name: lowercase, dots/spaces → hyphens, strip invalid chars.
+        var projectSegment = SanitizeForCompose(request.ProjectName);
+
+        // Collision handling: append -1, -2, ... if a deployment with this name already exists.
+        var targetName = projectSegment;
+        var suffix = 1;
+        while (Directory.Exists(Path.Combine(deploymentRoot, targetName)))
         {
-            versionSegment = DateTime.Now.ToString("yyyyMMddHHmm");
+            targetName = $"{projectSegment}-{suffix++}";
         }
 
-        var targetDirectory = Path.Combine(deploymentRoot, projectSegment, versionSegment);
-        if (Directory.Exists(targetDirectory))
-        {
-            Directory.Delete(targetDirectory, recursive: true);
-        }
-
+        var targetDirectory = Path.Combine(deploymentRoot, targetName);
         Directory.CreateDirectory(targetDirectory);
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -69,8 +66,8 @@ public sealed class DefinitionDeploymentService
 
         var metadata = new DeploymentMetadata
         {
-            Project = request.ProjectName,
-            Version = request.Version,
+            Project = projectSegment,
+            ChartVersion = request.ChartVersion,
             SourcePath = request.SourcePath,
             LastAction = "Prepared"
         };
@@ -125,17 +122,15 @@ public sealed class DefinitionDeploymentService
         }
     }
 
-    private static string SanitizeSegment(string? segment)
+    /// <summary>
+    /// Normalises a string to a compose-compatible segment: lowercase, dots/spaces become hyphens,
+    /// other non-alphanumeric (except hyphens and underscores) are removed.
+    /// </summary>
+    public static string SanitizeForCompose(string? name)
     {
-        if (string.IsNullOrWhiteSpace(segment)) return "default";
-        var trimmed = segment.Trim();
-        var chars = new char[trimmed.Length];
-        for (var i = 0; i < trimmed.Length; i++)
-        {
-            var ch = trimmed[i];
-            chars[i] = Path.GetInvalidPathChars().Contains(ch) ? '_' : ch;
-        }
-        var sanitized = new string(chars).Trim('_');
-        return string.IsNullOrWhiteSpace(sanitized) ? "default" : sanitized;
+        if (string.IsNullOrWhiteSpace(name)) return "crosspose";
+        var chars = name.ToLowerInvariant().Select(c => c == '.' || c == ' ' ? '-' : c);
+        var sanitized = new string(chars.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray()).Trim('-', '_');
+        return string.IsNullOrWhiteSpace(sanitized) ? "crosspose" : sanitized;
     }
 }

@@ -397,11 +397,12 @@
                     </ListView.Resources>
                     <ListView.View>
                         <GridView>
-                            <GridViewColumn Header="Filename" DisplayMemberBinding="{Binding FileName}" Width="280" />
-                            <GridViewColumn Header="Size" DisplayMemberBinding="{Binding SizeDisplay}" Width="90" />
-                            <GridViewColumn Header="Modified" DisplayMemberBinding="{Binding Modified}" Width="150" />
-                            <GridViewColumn Header="Files" DisplayMemberBinding="{Binding AssociatedFilesLabel}" Width="120" />
-                            <GridViewColumn Header="Path" DisplayMemberBinding="{Binding FullPath}" Width="280" />
+                            <GridViewColumn Header="Name" DisplayMemberBinding="{Binding ChartName}" Width="220" />
+                            <GridViewColumn Header="Version" DisplayMemberBinding="{Binding Version}" Width="110" />
+                            <GridViewColumn Header="Size" DisplayMemberBinding="{Binding SizeDisplay}" Width="80" />
+                            <GridViewColumn Header="Modified" DisplayMemberBinding="{Binding Modified}" Width="140" />
+                            <GridViewColumn Header="Files" DisplayMemberBinding="{Binding AssociatedFilesLabel}" Width="110" />
+                            <GridViewColumn Header="Path" DisplayMemberBinding="{Binding FullPath}" Width="260" />
                         </GridView>
                     </ListView.View>
                 </ListView>
@@ -432,7 +433,7 @@
                             <GridView>
                                 <GridViewColumn Header="Name" DisplayMemberBinding="{Binding Name}" Width="220" />
                                 <GridViewColumn Header="Version" DisplayMemberBinding="{Binding Version}" Width="140" />
-                                <GridViewColumn Header="Last Modified" DisplayMemberBinding="{Binding LastModified}" Width="180" />
+                                <GridViewColumn Header="Created" DisplayMemberBinding="{Binding Created}" Width="180" />
                                 <GridViewColumn Header="Path" DisplayMemberBinding="{Binding FullPath}" Width="320" />
                             </GridView>
                         </ListView.View>
