@@ -488,8 +488,6 @@ $RECYCLE.BIN/
 
 # Claude
 .claude/
-!.claude/skills/
-!.claude/skills/**
 
 # Local scripts (workload-specific, never committed)
 scripts/
