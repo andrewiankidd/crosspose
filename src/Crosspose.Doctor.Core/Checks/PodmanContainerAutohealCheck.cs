@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Crosspose.Core.Configuration;
+using Crosspose.Core.Deployment;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Orchestration;
 using Microsoft.Extensions.Logging;
@@ -117,7 +118,7 @@ public sealed class PodmanContainerAutohealCheck : ICheckFix
             var composeFiles = Directory.GetFiles(deployDir, "docker-compose.*.yml", SearchOption.TopDirectoryOnly)
                 .Where(f => !f.EndsWith(".windows.yml", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => f)
-                .Select(f => $"-f \"{ToWslPath(f)}\"")
+                .Select(f => $"-f \"{WslRunner.ToWslPath(f)}\"")
                 .ToList();
 
             if (composeFiles.Count == 0)
@@ -259,55 +260,11 @@ public sealed class PodmanContainerAutohealCheck : ICheckFix
 
     /// <summary>
     /// Finds the version subdirectory for the given compose project name within the deployment root.
-    /// Looks for DeploymentDirectory/&lt;project&gt;/&lt;version&gt;/ where compose files exist.
-    ///
-    /// When the project label matches a version name (e.g. "default" — which is the version subdir
-    /// name used by compose when ProjectName isn't propagated), falls back to scanning all project
-    /// dirs for a version subdir whose name matches the label.
-    /// </summary>
     private static string? FindDeploymentDir(string? project)
     {
         if (string.IsNullOrWhiteSpace(project)) return null;
-
-        var deployRoot = CrossposeEnvironment.DeploymentDirectory;
-        if (!Directory.Exists(deployRoot)) return null;
-
-        // Primary: label is the outer project name — find its version subdir with linux files
-        var projectDir = Path.Combine(deployRoot, project);
-        if (Directory.Exists(projectDir))
-        {
-            var versionDir = Directory.GetDirectories(projectDir)
-                .OrderByDescending(Directory.GetLastWriteTime)
-                .FirstOrDefault(dir =>
-                    Directory.GetFiles(dir, "docker-compose.*.linux.yml", SearchOption.TopDirectoryOnly).Length > 0);
-            if (versionDir is not null) return versionDir;
-        }
-
-        // Fallback: label equals the version subdir name (e.g. "default") — scan all project dirs
-        // for a version subdir matching this name that contains linux compose files.
-        foreach (var outerDir in Directory.GetDirectories(deployRoot).OrderByDescending(Directory.GetLastWriteTime))
-        {
-            var candidate = Path.Combine(outerDir, project);
-            if (Directory.Exists(candidate) &&
-                Directory.GetFiles(candidate, "docker-compose.*.linux.yml", SearchOption.TopDirectoryOnly).Length > 0)
-            {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>Converts a Windows absolute path to its /mnt/<drive>/... WSL equivalent.</summary>
-    private static string ToWslPath(string windowsPath)
-    {
-        windowsPath = Path.GetFullPath(windowsPath);
-        if (windowsPath.Length >= 2 && windowsPath[1] == ':')
-        {
-            var drive = char.ToLowerInvariant(windowsPath[0]);
-            var rest = windowsPath[2..].Replace('\\', '/').TrimStart('/');
-            return $"/mnt/{drive}/{rest}";
-        }
-        return windowsPath.Replace('\\', '/');
+        var dir = DeploymentMetadataStore.FindDeploymentDirectory(project);
+        return dir is not null && Directory.GetFiles(dir, "docker-compose.*.linux.yml", SearchOption.TopDirectoryOnly).Length > 0
+            ? dir : null;
     }
 }

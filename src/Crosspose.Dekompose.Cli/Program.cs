@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.IO.Compression;
 using Crosspose.Core.Configuration;
+using Crosspose.Core.Deployment;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Logging;
 using Crosspose.Dekompose.Core.Services;
@@ -97,12 +98,28 @@ if (options.ChartPath is not null)
                 : stem;
         }
 
-        var folderName = valuesName is null
-            ? $"{chartInfo.Name}-{chartInfo.Version}-{epochStamp}"
-            : $"{chartInfo.Name}-{chartInfo.Version}-{valuesName}-{epochStamp}";
+        // Folder/bundle name: <chart-product-name>, with -1, -2 ... suffix on collision.
+        // Chart name, version, values label and creation timestamp are stored in _chart.yaml inside the bundle.
+        var productName = DefinitionDeploymentService.SanitizeForCompose(chartInfo.TgzName ?? chartInfo.Name);
+        var targetName = productName;
+        var collisionSuffix = 1;
+        while (Directory.Exists(Path.Combine(baseOutputDirectory, targetName)) ||
+               (options.CompressOutput && File.Exists(Path.Combine(baseOutputDirectory, $"{targetName}.zip"))))
+        {
+            targetName = $"{productName}-{collisionSuffix++}";
+        }
 
-        targetOutputDirectory = Path.Combine(baseOutputDirectory, folderName);
+        targetOutputDirectory = Path.Combine(baseOutputDirectory, targetName);
         Directory.CreateDirectory(targetOutputDirectory);
+
+        // Write chart metadata so the GUI can display chart name/version without parsing the filename.
+        var chartMetaLines = new System.Text.StringBuilder();
+        chartMetaLines.AppendLine($"chartName: {chartInfo.TgzName ?? chartInfo.Name}");
+        chartMetaLines.AppendLine($"chartVersion: {chartInfo.Version}");
+        if (valuesName is not null)
+            chartMetaLines.AppendLine($"valuesLabel: {valuesName}");
+        chartMetaLines.AppendLine($"createdAt: {DateTimeOffset.UtcNow:yyyy-MM-ddTHH:mm:ssZ}");
+        File.WriteAllText(Path.Combine(targetOutputDirectory, "_chart.yaml"), chartMetaLines.ToString());
     }
 }
 
@@ -125,12 +142,9 @@ if (renderedManifestPath is null && options.ChartPath is not null)
 
     renderedManifestPath = helmResult.RenderedManifestPath;
 
-    // Persist the rendered chart and the values that produced it for traceability.
+    // Persist the values file that produced this render for traceability.
     try
     {
-        var renderedCopy = Path.Combine(targetOutputDirectory, "_chart.yaml");
-        File.Copy(renderedManifestPath, renderedCopy, overwrite: true);
-
         var valuesCopy = Path.Combine(targetOutputDirectory, "_values.yaml");
         if (!string.IsNullOrWhiteSpace(options.ValuesPath) && File.Exists(options.ValuesPath))
         {
@@ -143,7 +157,7 @@ if (renderedManifestPath is null && options.ChartPath is not null)
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "Failed to persist rendered chart/values snapshot.");
+        logger.LogWarning(ex, "Failed to persist values snapshot.");
     }
 }
 

@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Crosspose.Core.Configuration;
 using Crosspose.Core.Deployment;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Orchestration;
@@ -342,9 +343,9 @@ public partial class ContainerDetailsWindow : Window
             ? $"{repo}:{newTag}"
             : $"{registry}/{repo}:{newTag}";
 
-        var projectDir = string.IsNullOrWhiteSpace(_row.Project)
-            ? null
-            : DeploymentMetadataStore.FindDeploymentDirectory(_row.Project);
+        // _row.Project is the Docker/Podman compose project label = the deployment dir name
+        // (e.g. "helm-platform" or "helm-platform-1" for collision) under deployBase.
+        var projectDir = DeploymentMetadataStore.FindDeploymentDirectory(_row.Project);
 
         if (projectDir is null)
         {

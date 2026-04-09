@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -168,7 +169,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     return new ChartFileRow
                     {
                         FileName = info.Name,
+                        ChartName = ParseChartName(info.Name),
                         FullPath = info.FullName,
+                        Version = ParseChartVersion(info.Name),
                         SizeDisplay = FormatFileSize(info.Length),
                         Modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm"),
                         ValuesFilePath = FindChartSiblingFile(info.FullName, ".values"),
@@ -185,12 +188,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .Select(zip =>
                 {
-                    var fileName = Path.GetFileNameWithoutExtension(zip);
-                    var (projectName, versionName) = SplitProjectAndVersion(fileName);
+                    var (_, metaVersion, metaCreated) = ReadChartYaml(zip);
                     return new ProjectEntry
                     {
-                        Name = projectName,
-                        Version = versionName,
+                        Name = Path.GetFileNameWithoutExtension(zip),
+                        Version = metaVersion ?? string.Empty,
+                        Created = metaCreated ?? File.GetLastWriteTime(zip).ToString("g"),
                         FullPath = zip,
                         LastWriteTime = File.GetLastWriteTime(zip),
                         FileCount = 1
@@ -822,23 +825,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var rows = new List<DeploymentRow>();
         if (!Directory.Exists(deploymentRoot)) return rows;
 
-        foreach (var projectDir in Directory.GetDirectories(deploymentRoot))
+        // Flat layout: each direct subdirectory IS a deployment (<project>[-suffix]/).
+        foreach (var deployDir in Directory.GetDirectories(deploymentRoot))
         {
-            var projectName = Path.GetFileName(projectDir);
-            var versionDirs = Directory.GetDirectories(projectDir);
-            if (versionDirs.Length == 0)
-            {
-                var single = CreateDeploymentRow(projectDir, projectName, projectName);
-                if (single is not null) rows.Add(single);
-                continue;
-            }
-
-            foreach (var versionDir in versionDirs)
-            {
-                var versionName = Path.GetFileName(versionDir);
-                var row = CreateDeploymentRow(versionDir, projectName, versionName);
-                if (row is not null) rows.Add(row);
-            }
+            var row = CreateDeploymentRow(deployDir);
+            if (row is not null) rows.Add(row);
         }
 
         return rows
@@ -846,7 +837,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .ToList();
     }
 
-    private static DeploymentRow? CreateDeploymentRow(string directory, string projectFallback, string versionFallback)
+    private static DeploymentRow? CreateDeploymentRow(string directory)
     {
         if (!Directory.Exists(directory)) return null;
         var metadata = DeploymentMetadataStore.Read(directory);
@@ -855,6 +846,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return null;
         }
 
+        var dirName = Path.GetFileName(directory);
         var info = new DirectoryInfo(directory);
         var lastAction = metadata?.LastAction;
         if (string.IsNullOrWhiteSpace(lastAction))
@@ -864,8 +856,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         return new DeploymentRow
         {
-            Project = metadata?.Project ?? projectFallback,
-            Version = metadata?.Version ?? versionFallback,
+            Project = metadata?.Project ?? DeploymentMetadataStore.ExtractProjectFromDirName(dirName),
+            Version = metadata?.ChartVersion ?? string.Empty,
             FullPath = directory,
             LastAction = lastAction,
             LastUpdated = info.LastWriteTime.ToString("g")
@@ -912,16 +904,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             foreach (var zip in zips)
             {
-                var fileName = Path.GetFileNameWithoutExtension(zip);
-                var (projectName, versionName) = SplitProjectAndVersion(fileName);
-                var modified = File.GetLastWriteTime(zip);
-
+                var (_, metaVersion, metaCreated) = ReadChartYaml(zip);
                 var entry = new ProjectEntry
                 {
-                    Name = projectName,
-                    Version = versionName,
+                    Name = Path.GetFileNameWithoutExtension(zip),
+                    Version = metaVersion ?? string.Empty,
+                    Created = metaCreated ?? File.GetLastWriteTime(zip).ToString("g"),
                     FullPath = zip,
-                    LastWriteTime = modified,
+                    LastWriteTime = File.GetLastWriteTime(zip),
                     FileCount = 1
                 };
                 Projects.Add(entry);
@@ -1018,7 +1008,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Charts.Add(new ChartFileRow
             {
                 FileName = info.Name,
+                ChartName = ParseChartName(info.Name),
                 FullPath = info.FullName,
+                Version = ParseChartVersion(info.Name),
                 SizeDisplay = FormatFileSize(info.Length),
                 Modified = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm"),
                 ValuesFilePath = FindChartSiblingFile(info.FullName, ".values"),
@@ -1046,6 +1038,66 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     /// or null if neither extension exists.
     /// Example: mychart-1.0.0.tgz + ".values" → mychart-1.0.0.values.yaml
     /// </summary>
+    /// <summary>
+    /// Reads chart metadata from the <c>_chart.yaml</c> embedded in a bundle zip.
+    /// Returns (null, null, null) for bundles that pre-date this file.
+    /// </summary>
+    private static (string? chartName, string? chartVersion, string? createdAt) ReadChartYaml(string zipPath)
+    {
+        try
+        {
+            using var zip = ZipFile.OpenRead(zipPath);
+            var entry = zip.GetEntry("_chart.yaml");
+            if (entry is null) return (null, null, null);
+            using var reader = new System.IO.StreamReader(entry.Open());
+            string? chartName = null, chartVersion = null, createdAt = null;
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                if (chartName is null && line.StartsWith("chartName:", StringComparison.OrdinalIgnoreCase))
+                    chartName = line["chartName:".Length..].Trim();
+                else if (chartVersion is null && line.StartsWith("chartVersion:", StringComparison.OrdinalIgnoreCase))
+                    chartVersion = line["chartVersion:".Length..].Trim();
+                else if (createdAt is null && line.StartsWith("createdAt:", StringComparison.OrdinalIgnoreCase))
+                    createdAt = line["createdAt:".Length..].Trim();
+                if (chartName is not null && chartVersion is not null && createdAt is not null) break;
+            }
+            return (chartName, chartVersion, createdAt);
+        }
+        catch
+        {
+            return (null, null, null); /* best-effort */
+        }
+    }
+
+    /// <summary>
+    /// Extracts the chart name from a Helm tgz filename, stripping the trailing version segment.
+    /// E.g. "helm-platform-9.2.491.tgz" → "helm-platform"
+    /// </summary>
+    private static string ParseChartName(string fileName)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        stem = Path.GetFileNameWithoutExtension(stem); // strip .tar if present
+        var idx = stem.LastIndexOf('-');
+        return idx > 0 && idx < stem.Length - 1 && char.IsDigit(stem[idx + 1])
+            ? stem[..idx]
+            : stem;
+    }
+
+    /// <summary>
+    /// Extracts the chart version from a Helm tgz filename using the standard naming convention
+    /// &lt;chart-name&gt;-&lt;version&gt;.tgz. Looks for the last hyphen followed by a digit.
+    /// </summary>
+    private static string ParseChartVersion(string fileName)
+    {
+        var stem = Path.GetFileNameWithoutExtension(fileName); // strip .tgz
+        stem = Path.GetFileNameWithoutExtension(stem);         // strip .tar if present
+        var idx = stem.LastIndexOf('-');
+        return idx > 0 && idx < stem.Length - 1 && char.IsDigit(stem[idx + 1])
+            ? stem[(idx + 1)..]
+            : string.Empty;
+    }
+
     private static string? FindChartSiblingFile(string tgzPath, string suffix)
     {
         var dir = Path.GetDirectoryName(tgzPath)!;
@@ -1516,9 +1568,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _logger.LogInformation("Prepared deployment at {DeploymentPath} from {Source}", deploymentPath, entry.FullPath);
 
             // Don't pass ProjectName — let ComposeProjectLoader derive it from the
-            // deployment directory name (the version timestamp). This ensures consistent
-            // naming between deploy and subsequent Up actions, and avoids collisions when
-            // the same chart is dekomposed multiple times.
+            // deployment directory name. This ensures consistent naming between deploy
+            // and subsequent Up actions.
             var request = new ComposeExecutionRequest(
                 deploymentPath,
                 ComposeAction.Up,
@@ -1533,7 +1584,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 metadata.LastAction = label;
                 metadata.Project = entry.Name;
-                metadata.Version = entry.Version;
+                metadata.ChartVersion = entry.Version;
             });
 
             if (result.PortProxyFixRequired)
@@ -1974,7 +2025,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             BaseDirectory = CrossposeEnvironment.DeploymentDirectory,
             ProjectName = entry.Name,
-            Version = entry.Version,
+            ChartVersion = entry.Version,
             SourcePath = entry.FullPath
         };
         return _deploymentService.PrepareAsync(request);
@@ -2016,7 +2067,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 metadata.LastAction = label;
                 metadata.Project = row.Project;
-                metadata.Version = row.Version;
+                metadata.ChartVersion = row.Version;
             });
         }
         catch (Exception ex)
@@ -2113,16 +2164,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _logger.LogError(ex, "Failed to open deployments folder.");
             MessageBox.Show(this, "Unable to open deployments folder.\n\n" + ex.Message, "Crosspose", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    }
-
-    private static (string project, string version) SplitProjectAndVersion(string folderName)
-    {
-        var idx = folderName.LastIndexOf('-');
-        if (idx > 0 && idx < folderName.Length - 1)
-        {
-            return (folderName[..idx], folderName[(idx + 1)..]);
-        }
-        return (folderName, "unknown");
     }
 
     private void OnPullLogWrite(string line)
@@ -2726,9 +2767,9 @@ public class ProjectEntry
 {
     public string Name { get; set; } = string.Empty;
     public string Version { get; set; } = string.Empty;
+    public string Created { get; set; } = string.Empty;
     public string FullPath { get; set; } = string.Empty;
     public DateTime LastWriteTime { get; set; }
-    public string LastModified => LastWriteTime.ToString("g");
     public int FileCount { get; set; }
 }
 
@@ -2788,7 +2829,9 @@ public class DeploymentRow : INotifyPropertyChanged
 public sealed class ChartFileRow
 {
     public string FileName { get; set; } = string.Empty;
+    public string ChartName { get; set; } = string.Empty;
     public string FullPath { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
     public string SizeDisplay { get; set; } = string.Empty;
     public string Modified { get; set; } = string.Empty;
     public string? ValuesFilePath { get; set; }

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace Crosspose.Core.Deployment;
@@ -19,8 +20,9 @@ public static class DeploymentMetadataStore
             var metadata = JsonSerializer.Deserialize<DeploymentMetadata>(json);
             if (metadata is not null)
             {
-                metadata.Project ??= Path.GetFileName(Path.GetDirectoryName(directory)?.TrimEnd(Path.DirectorySeparatorChar) ?? directory);
-                metadata.Version ??= Path.GetFileName(directory);
+                // Flat layout: <deployBase>/<project>[-suffix]/
+                // Derive Project from dir name only as last-resort fallback.
+                metadata.Project ??= ExtractProjectFromDirName(Path.GetFileName(directory));
             }
             return metadata;
         }
@@ -28,8 +30,7 @@ public static class DeploymentMetadataStore
         {
             return new DeploymentMetadata
             {
-                Project = Path.GetFileName(Path.GetDirectoryName(directory)?.TrimEnd(Path.DirectorySeparatorChar) ?? directory),
-                Version = Path.GetFileName(directory)
+                Project = ExtractProjectFromDirName(Path.GetFileName(directory))
             };
         }
     }
@@ -37,8 +38,7 @@ public static class DeploymentMetadataStore
     public static void Write(string directory, DeploymentMetadata metadata)
     {
         if (metadata is null) throw new ArgumentNullException(nameof(metadata));
-        metadata.Project ??= Path.GetFileName(Path.GetDirectoryName(directory)?.TrimEnd(Path.DirectorySeparatorChar) ?? directory);
-        metadata.Version ??= Path.GetFileName(directory);
+        metadata.Project ??= ExtractProjectFromDirName(Path.GetFileName(directory));
         metadata.LastUpdatedUtc = DateTime.UtcNow;
 
         var path = Path.Combine(directory, MetadataFileName);
@@ -56,31 +56,27 @@ public static class DeploymentMetadataStore
     }
 
     /// <summary>
-    /// Returns the most recent deployment directory for <paramref name="project"/>, or null if
-    /// no matching deployment exists under <see cref="Configuration.CrossposeEnvironment.DeploymentDirectory"/>.
-    /// When multiple version subdirectories exist, the one with the latest last-write time is returned.
+    /// Returns the deployment directory whose name matches <paramref name="composeProject"/>
+    /// (the Docker/Podman compose project label, which equals the directory leaf name).
+    /// Returns the most recently written match if multiple exist (collision-suffixed duplicates).
     /// </summary>
-    public static string? FindDeploymentDirectory(string project)
+    public static string? FindDeploymentDirectory(string composeProject)
     {
-        if (string.IsNullOrWhiteSpace(project)) return null;
+        if (string.IsNullOrWhiteSpace(composeProject)) return null;
         var deployBase = Configuration.CrossposeEnvironment.DeploymentDirectory;
         if (!Directory.Exists(deployBase)) return null;
 
-        // Layout: <deployBase>/<project-name>/<version>/
-        var projectRoot = Path.Combine(deployBase, project);
-        if (Directory.Exists(projectRoot))
-        {
-            // Return the most recent version subfolder
-            return Directory.EnumerateDirectories(projectRoot)
-                .OrderByDescending(Directory.GetLastWriteTimeUtc)
-                .FirstOrDefault();
-        }
-
-        // Fallback: search one level deeper for a case-insensitive match
+        // Flat layout: directory name == compose project name.
         return Directory.EnumerateDirectories(deployBase)
-            .Where(d => Path.GetFileName(d).Equals(project, StringComparison.OrdinalIgnoreCase))
-            .SelectMany(d => Directory.EnumerateDirectories(d))
+            .Where(d => Path.GetFileName(d).Equals(composeProject, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(Directory.GetLastWriteTimeUtc)
             .FirstOrDefault();
     }
+
+    /// <summary>
+    /// Returns the directory leaf name as the project name. The directory name IS the project name
+    /// under the current flat layout (e.g. "helm-platform" or "helm-platform-1" for collision).
+    /// </summary>
+    public static string ExtractProjectFromDirName(string dirName) =>
+        string.IsNullOrWhiteSpace(dirName) ? dirName : dirName;
 }

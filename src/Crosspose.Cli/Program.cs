@@ -515,18 +515,11 @@ async Task<int> HandleDeploymentsAsync(string[] opts)
     {
         var deployDir = CrossposeEnvironment.DeploymentDirectory;
         if (!Directory.Exists(deployDir)) { Console.WriteLine("No deployments."); return 0; }
-        var projects = Directory.GetDirectories(deployDir).OrderBy(p => p);
-        var any = false;
-        Console.WriteLine($"{"PROJECT / VERSION",-60} PATH");
-        foreach (var proj in projects)
-        {
-            foreach (var ver in Directory.GetDirectories(proj).OrderByDescending(v => v))
-            {
-                any = true;
-                var label = $"{Path.GetFileName(proj)}/{Path.GetFileName(ver)}";
-                Console.WriteLine($"{Trunc(label, 60),-60} {ver}");
-            }
-        }
+        var dirs = Directory.GetDirectories(deployDir).OrderBy(p => p).ToArray();
+        var any = dirs.Length > 0;
+        Console.WriteLine($"{"PROJECT",-60} PATH");
+        foreach (var dir in dirs)
+            Console.WriteLine($"{Trunc(Path.GetFileName(dir), 60),-60} {dir}");
         if (!any) Console.WriteLine("No deployments.");
         return 0;
     }
@@ -618,7 +611,7 @@ async Task<int> DeployAsync(string[] opts)
     if (string.IsNullOrWhiteSpace(source))
     {
         Console.WriteLine("deploy requires a source path (zip file or directory).");
-        Console.WriteLine("  crosspose deploy <bundle.zip> [--project <name>] [--version <v>]");
+        Console.WriteLine("  crosspose deploy <bundle.zip> [--project <name>] [--chart-version <v>]");
         return 1;
     }
     var fullSource = Path.GetFullPath(source);
@@ -628,14 +621,7 @@ async Task<int> DeployAsync(string[] opts)
         return 1;
     }
     if (string.IsNullOrWhiteSpace(project))
-    {
-        var stem = Path.GetFileNameWithoutExtension(fullSource);
-        // Strip trailing -<epoch> segment: the folder name is <name>-<version>-<label>-<epoch>
-        var lastHyphen = stem.LastIndexOf('-');
-        project = lastHyphen > 0 && long.TryParse(stem[(lastHyphen + 1)..], out _)
-            ? stem[..lastHyphen]
-            : stem;
-    }
+        project = Path.GetFileNameWithoutExtension(fullSource);
     try
     {
         var deployService = new DefinitionDeploymentService();
@@ -644,7 +630,7 @@ async Task<int> DeployAsync(string[] opts)
             SourcePath = fullSource,
             BaseDirectory = CrossposeEnvironment.DeploymentDirectory,
             ProjectName = project,
-            Version = version
+            ChartVersion = version
         });
         Console.WriteLine($"Deployed to: {result.TargetPath}");
         return 0;

@@ -101,7 +101,7 @@ public sealed class OrphanedPodmanNetworkCheck : ICheckFix
                 }
             }
         }
-        catch { return Array.Empty<string>(); }
+        catch { return Array.Empty<string>(); /* best-effort — podman JSON output may be malformed */ }
 
         if (candidates.Count == 0)
             return Array.Empty<string>();
@@ -132,7 +132,7 @@ public sealed class OrphanedPodmanNetworkCheck : ICheckFix
 
                 orphaned.Add(name);
             }
-            catch { }
+            catch { /* best-effort — skip networks whose inspect output is unparseable */ }
         }
 
         return orphaned;

@@ -227,24 +227,10 @@ public sealed class ComposeOrchestrator
         return new PlatformCommandResult(platform == ComposePlatform.Docker ? "docker" : "podman", result);
     }
 
-    private static string AdaptPathForRunner(IContainerPlatformRunner runner, string path)
-    {
-        if (!runner.BaseCommand.Equals("wsl", StringComparison.OrdinalIgnoreCase))
-        {
-            return path;
-        }
-
-        if (path.Length >= 2 && path[1] == ':')
-        {
-            var drive = char.ToLowerInvariant(path[0]);
-            var remainder = path.Substring(2)
-                .Replace('\\', '/')
-                .TrimStart('/');
-            return $"/mnt/{drive}/{remainder}";
-        }
-
-        return path.Replace('\\', '/');
-    }
+    private static string AdaptPathForRunner(IContainerPlatformRunner runner, string path) =>
+        runner.BaseCommand.Equals("wsl", StringComparison.OrdinalIgnoreCase)
+            ? WslRunner.ToWslPath(path)
+            : path;
 
     private static string Quote(string value) =>
         value.Contains(' ') ? $"\"{value}\"" : value;

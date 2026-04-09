@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Crosspose.Core.Configuration;
+using Crosspose.Core.Deployment;
 using Crosspose.Core.Diagnostics;
 using Crosspose.Core.Orchestration;
 using Microsoft.Extensions.Logging;
@@ -64,7 +65,7 @@ public sealed class PodmanCreatedContainerCheck : ICheckFix
 
             var composeFiles = Directory.GetFiles(deployDir, "docker-compose.*.linux.yml", SearchOption.TopDirectoryOnly)
                 .OrderBy(f => f)
-                .Select(f => $"-f \"{ToWslPath(f)}\"")
+                .Select(f => $"-f \"{WslRunner.ToWslPath(f)}\"")
                 .ToList();
 
             if (composeFiles.Count == 0)
@@ -152,48 +153,15 @@ public sealed class PodmanCreatedContainerCheck : ICheckFix
                 containers.Add(new CreatedContainer(name, project));
             }
         }
-        catch { }
+        catch { /* best-effort — podman JSON output may be malformed; return whatever was collected */ }
 
         return containers;
     }
 
     private static string? FindDeploymentDir(string project)
     {
-        var deployRoot = CrossposeEnvironment.DeploymentDirectory;
-        if (!Directory.Exists(deployRoot)) return null;
-
-        // Primary: label is the outer project name.
-        var projectDir = Path.Combine(deployRoot, project);
-        if (Directory.Exists(projectDir))
-        {
-            var versionDir = Directory.GetDirectories(projectDir)
-                .OrderByDescending(Directory.GetLastWriteTime)
-                .FirstOrDefault(dir =>
-                    Directory.GetFiles(dir, "docker-compose.*.linux.yml", SearchOption.TopDirectoryOnly).Length > 0);
-            if (versionDir is not null) return versionDir;
-        }
-
-        // Fallback: label equals the version subdir name (e.g. "default").
-        foreach (var outerDir in Directory.GetDirectories(deployRoot).OrderByDescending(Directory.GetLastWriteTime))
-        {
-            var candidate = Path.Combine(outerDir, project);
-            if (Directory.Exists(candidate) &&
-                Directory.GetFiles(candidate, "docker-compose.*.linux.yml", SearchOption.TopDirectoryOnly).Length > 0)
-                return candidate;
-        }
-
-        return null;
-    }
-
-    private static string ToWslPath(string windowsPath)
-    {
-        windowsPath = Path.GetFullPath(windowsPath);
-        if (windowsPath.Length >= 2 && windowsPath[1] == ':')
-        {
-            var drive = char.ToLowerInvariant(windowsPath[0]);
-            var rest = windowsPath[2..].Replace('\\', '/').TrimStart('/');
-            return $"/mnt/{drive}/{rest}";
-        }
-        return windowsPath.Replace('\\', '/');
+        var dir = DeploymentMetadataStore.FindDeploymentDirectory(project);
+        return dir is not null && Directory.GetFiles(dir, "docker-compose.*.linux.yml", SearchOption.TopDirectoryOnly).Length > 0
+            ? dir : null;
     }
 }
