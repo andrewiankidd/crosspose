@@ -25,6 +25,8 @@ public sealed class AzureAcrAuthLinCheck : ICheckFix
     public bool IsAdditional => true;
     public string AdditionalKey => $"azure-acr-auth-lin:{_registryName}";
     public bool CanFix => true;
+    public bool AutoFix => true;
+    public int CheckIntervalSeconds => 300; // local file read only — check every 5 min, fix only triggers on token expiry
     public bool RequiresConnectivity => true;
 
         public async Task<CheckResult> RunAsync(ProcessRunner runner, ILogger logger, CancellationToken cancellationToken)

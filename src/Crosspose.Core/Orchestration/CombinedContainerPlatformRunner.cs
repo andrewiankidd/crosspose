@@ -98,6 +98,14 @@ public sealed class CombinedContainerPlatformRunner : IContainerPlatformRunner
             ? runner!.RemoveContainerAsync(actualId, cancellationToken)
             : Task.FromResult(false);
 
+    public async Task<bool> LoginAsync(string registry, string username, string password, CancellationToken cancellationToken = default)
+    {
+        var dockerTask = _docker.LoginAsync(registry, username, password, cancellationToken);
+        var podmanTask = _podman.LoginAsync(registry, username, password, cancellationToken);
+        var results = await Task.WhenAll(dockerTask, podmanTask).ConfigureAwait(false);
+        return results.Any(r => r);
+    }
+
     public Task<bool> RemoveImageAsync(string id, CancellationToken cancellationToken = default) =>
         TryResolveRunner(id, out var runner, out var actualId)
             ? runner!.RemoveImageAsync(actualId, cancellationToken)

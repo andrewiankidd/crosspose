@@ -48,6 +48,12 @@ public abstract class ContainerPlatformRunnerBase : VirtualizationPlatformRunner
         return result.IsSuccess;
     }
 
+    public virtual async Task<bool> LoginAsync(string registry, string username, string password, CancellationToken cancellationToken = default)
+    {
+        var result = await ExecAsync(new[] { "login", registry, "-u", username, "-p", password }, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return result.IsSuccess;
+    }
+
     public virtual async Task<bool> RemoveImageAsync(string id, CancellationToken cancellationToken = default)
     {
         var result = await ExecAsync(new[] { "rmi", "-f", id }, cancellationToken: cancellationToken).ConfigureAwait(false);

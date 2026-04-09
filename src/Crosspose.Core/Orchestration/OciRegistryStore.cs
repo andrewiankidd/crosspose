@@ -39,6 +39,23 @@ public sealed class OciRegistryStore
 
     public IReadOnlyList<OciRegistryEntry> GetAll() => _registries.ToList();
 
+    /// <summary>
+    /// Returns the configured registry entry whose address matches <paramref name="registryHost"/>
+    /// (e.g. "amcsmainprdcr.azurecr.io"), or null if no match is found.
+    /// </summary>
+    public OciRegistryEntry? TryGetEntryForHost(string registryHost)
+    {
+        if (string.IsNullOrWhiteSpace(registryHost)) return null;
+        return _registries.FirstOrDefault(r =>
+        {
+            var addr = r.Address;
+            if (!addr.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                addr = "https://" + addr;
+            return Uri.TryCreate(addr, UriKind.Absolute, out var uri)
+                && uri.Host.Equals(registryHost, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
     public void AddOrUpdate(OciRegistryEntry entry)
     {
         var existing = _registries.FirstOrDefault(r => r.Name.Equals(entry.Name, StringComparison.OrdinalIgnoreCase));

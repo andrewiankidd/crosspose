@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,7 +15,8 @@ public partial class LogViewerControl : UserControl
 
     public static readonly DependencyProperty LogTextProperty =
         DependencyProperty.Register(nameof(LogText), typeof(string), typeof(LogViewerControl),
-            new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
+            new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault,
+                (d, _) => ((LogViewerControl)d).UpdateDisplayedText()));
 
     public static readonly DependencyProperty HeaderTextProperty =
         DependencyProperty.Register(nameof(HeaderText), typeof(string), typeof(LogViewerControl),
@@ -42,6 +44,22 @@ public partial class LogViewerControl : UserControl
     {
         get => (bool)GetValue(IsExpandedProperty);
         set => SetValue(IsExpandedProperty, value);
+    }
+
+    private void OnFilterChanged(object sender, TextChangedEventArgs e) => UpdateDisplayedText();
+
+    private void UpdateDisplayedText()
+    {
+        if (LogTextBox is null) return;
+        var filter = FilterBox?.Text.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(filter))
+        {
+            LogTextBox.Text = LogText;
+            return;
+        }
+        var lines = LogText.Split('\n');
+        LogTextBox.Text = string.Join(Environment.NewLine,
+            lines.Where(l => l.Contains(filter, StringComparison.OrdinalIgnoreCase)));
     }
 
     private void OnClearClick(object sender, RoutedEventArgs e)

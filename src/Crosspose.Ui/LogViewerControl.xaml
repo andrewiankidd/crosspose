@@ -12,10 +12,13 @@
         <StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                 <Button Content="Clear log" Margin="0,0,8,0" Click="OnClearClick" />
-                <Button Content="Copy log" Click="OnCopyClick" />
+                <Button Content="Copy log" Margin="0,0,8,0" Click="OnCopyClick" />
+                <TextBlock Text="Filter:" VerticalAlignment="Center" Margin="8,0,4,0" FontSize="11" />
+                <TextBox x:Name="FilterBox" Width="160" Padding="4,2"
+                         VerticalContentAlignment="Center" FontSize="11"
+                         TextChanged="OnFilterChanged" />
             </StackPanel>
             <TextBox x:Name="LogTextBox"
-                     Text="{Binding LogText, RelativeSource={RelativeSource AncestorType=UserControl}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      IsReadOnly="True"
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
