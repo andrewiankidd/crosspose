@@ -9,7 +9,23 @@
         Loaded="OnLoaded"
         Closing="OnClosing">
     <Grid Margin="12" Background="{DynamicResource WindowBackground}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <DockPanel Margin="0,0,0,8">
+            <Button DockPanel.Dock="Right" Content="Clear" Padding="8,3" Margin="8,0,0,0" Click="OnClear" />
+            <TextBlock DockPanel.Dock="Left" Text="Filter:" VerticalAlignment="Center"
+                       Margin="0,0,6,0" Foreground="{DynamicResource TextMuted}" />
+            <TextBox x:Name="FilterBox"
+                     TextChanged="OnFilterChanged"
+                     Padding="6,3"
+                     Background="{DynamicResource InputBackground}"
+                     Foreground="{DynamicResource TextPrimary}"
+                     BorderBrush="{DynamicResource InputBorder}" />
+        </DockPanel>
         <TextBox x:Name="LogBox"
+                 Grid.Row="1"
                  IsReadOnly="True"
                  AcceptsReturn="True"
                  TextWrapping="NoWrap"

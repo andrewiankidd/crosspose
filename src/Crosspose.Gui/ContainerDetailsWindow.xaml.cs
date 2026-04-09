@@ -3,7 +3,6 @@ using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using Crosspose.Core.Configuration;
 using Crosspose.Core.Deployment;
 using Crosspose.Core.Logging.Internal;
 using Crosspose.Core.Orchestration;
@@ -370,20 +369,60 @@ public partial class ContainerDetailsWindow : Window
         }
 
         SaveTagBtn.IsEnabled = false;
-        TagFetchStatus.Text = "Applying...";
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            // No service filter — compose up -d without a target is idempotent and
-            // only recreates services whose image changed. Passing a service name would
-            // route to both Docker and Podman runners and fail on whichever platform
-            // doesn't own that service.
+
+            // If we have stored credentials for this registry, log both runtimes in
+            // before the pull so podman in WSL can authenticate. Failure is non-fatal —
+            // the pull error will surface below if it still can't authenticate.
+            if (!string.IsNullOrWhiteSpace(registry))
+            {
+                var entry = _ociStore.TryGetEntryForHost(registry);
+                if (entry?.Username is not null && entry?.Password is not null)
+                {
+                    TagFetchStatus.Text = $"Logging in to {registry}...";
+                    _logger.LogInformation("Running registry login for {Registry} before image pull", registry);
+                    await _runner.LoginAsync(registry, entry.Username, entry.Password, cts.Token);
+                }
+            }
+
+            // Remove just this container by ID (rm -f stops it if running, then removes).
+            // Other containers are completely untouched.
+            TagFetchStatus.Text = "Removing old container...";
+            await _runner.RemoveContainerAsync(_row.UniqueId, cts.Token);
+
+            // compose up -d sees no container for this service and creates a fresh one
+            // with the updated image. Services that still have containers are left alone.
+            TagFetchStatus.Text = "Applying...";
             var request = new ComposeExecutionRequest(
                 SourcePath: projectDir,
                 Action: ComposeAction.Up,
                 Detached: true,
                 ProjectName: _row.Project);
-            await _orchestrator.ExecuteAsync(request, cts.Token);
+            var result = await _orchestrator.ExecuteAsync(request, cts.Token);
+
+            // Surface any compose error. podman-compose writes pull errors to stdout,
+            // not stderr, so fall back to stdout when stderr is empty.
+            var composeError = ExtractComposeError(result.PodmanResult)
+                ?? ExtractComposeError(result.DockerResult);
+
+            if (composeError is not null)
+            {
+                _logger.LogError("Compose up failed after image tag change: {Error}", composeError);
+
+                var isAuthError =
+                    composeError.Contains("authentication required", StringComparison.OrdinalIgnoreCase) ||
+                    composeError.Contains("unauthorized", StringComparison.OrdinalIgnoreCase) ||
+                    composeError.Contains("invalid username/password", StringComparison.OrdinalIgnoreCase);
+
+                TagFetchStatus.Text = isAuthError
+                    ? $"Auth failed for {(string.IsNullOrWhiteSpace(registry) ? "registry" : registry)} — check Doctor or add credentials in Sources"
+                    : FirstMeaningfulLine(composeError, maxLength: 90);
+
+                SaveTagBtn.IsEnabled = true;
+                return;
+            }
 
             _row.Image = newImage;
             ImageViewLabel.Text = newImage;
@@ -407,6 +446,23 @@ public partial class ContainerDetailsWindow : Window
         _tagCts?.Cancel();
         ImageEditPanel.Visibility = Visibility.Collapsed;
         ImageViewPanel.Visibility = Visibility.Visible;
+    }
+
+    private static string? ExtractComposeError(PlatformCommandResult? r)
+    {
+        if (r?.HasError != true) return null;
+        var text = !string.IsNullOrWhiteSpace(r.Error) ? r.Error : r.Result.StandardOutput;
+        return string.IsNullOrWhiteSpace(text) ? $"Exit code {r.Result.ExitCode}" : text.Trim();
+    }
+
+    // Strip ANSI escape codes and return the first non-trivial line, capped at maxLength.
+    private static string FirstMeaningfulLine(string text, int maxLength)
+    {
+        var clean = System.Text.RegularExpressions.Regex.Replace(text, @"\x1B\[[0-9;]*[mK]", "");
+        var line = clean.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .FirstOrDefault(l => l.Length > 4) ?? clean.Trim();
+        return line.Length <= maxLength ? line : line[..maxLength] + "…";
     }
 
     private static (string registry, string repo, string tag) ParseImageRef(string image)

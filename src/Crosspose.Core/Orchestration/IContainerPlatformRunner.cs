@@ -13,6 +13,7 @@ public interface IContainerPlatformRunner : IVirtualizationPlatformRunner
     Task<bool> StartContainerAsync(string id, CancellationToken cancellationToken = default);
     Task<bool> StopContainerAsync(string id, CancellationToken cancellationToken = default);
     Task<bool> RemoveContainerAsync(string id, CancellationToken cancellationToken = default);
+    Task<bool> LoginAsync(string registry, string username, string password, CancellationToken cancellationToken = default);
     Task<bool> RemoveImageAsync(string id, CancellationToken cancellationToken = default);
     Task<bool> RemoveVolumeAsync(string name, CancellationToken cancellationToken = default);
     /// <summary>Removes all images not referenced by any container (docker/podman image prune -af).</summary>

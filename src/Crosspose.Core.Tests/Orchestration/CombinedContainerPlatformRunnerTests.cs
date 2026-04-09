@@ -184,6 +184,9 @@ file sealed class FakeContainerRunner : IContainerPlatformRunner
     public Task<bool> RemoveContainerAsync(string id, CancellationToken cancellationToken = default)
         => Task.FromResult(true);
 
+    public Task<bool> LoginAsync(string registry, string username, string password, CancellationToken cancellationToken = default)
+        => Task.FromResult(true);
+
     public Task<bool> RemoveImageAsync(string id, CancellationToken cancellationToken = default)
         => Task.FromResult(true);
 
