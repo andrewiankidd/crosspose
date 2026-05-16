@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 
 namespace Crosspose.Core.Diagnostics;
 
@@ -80,6 +81,11 @@ public sealed class ProcessRunner
             process.Exited += (_, _) => exitCompletion.TrySetResult(process.ExitCode);
 
             _logger.LogDebug("Running command: {Command} {Arguments}", command, arguments);
+
+            // When running elevated, the process PATH omits user-level entries (stored in
+            // HKCU\Environment) because UAC elevation only inherits the system PATH.
+            // Merge them in so tools installed to user scope (e.g. winget, Scoop) are found.
+            startInfo.Environment["PATH"] = GetAugmentedPath();
 
             if (environment is not null)
             {
@@ -196,6 +202,49 @@ public sealed class ProcessRunner
             "powershell",
             $"-NoProfile -Command \"Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','{escapedCommand}'\"",
             cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Returns the current process PATH merged with user-level PATH entries from the registry.
+    /// When running elevated, UAC only inherits the system PATH, so tools installed to user
+    /// scope (winget packages, Scoop shims, etc.) are invisible to child processes without this.
+    /// </summary>
+    private static string GetAugmentedPath()
+    {
+        var processPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+                return processPath;
+
+            var userPath = Registry.GetValue(@"HKEY_CURRENT_USER\Environment", "Path", null) as string;
+            if (string.IsNullOrWhiteSpace(userPath))
+                return processPath;
+
+            // Merge, deduplicating entries while preserving order (process PATH wins for conflicts).
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var merged = new List<string>();
+
+            foreach (var entry in processPath.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (seen.Add(entry.Trim()))
+                    merged.Add(entry.Trim());
+            }
+
+            foreach (var entry in userPath.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (seen.Add(entry.Trim()))
+                    merged.Add(entry.Trim());
+            }
+
+            return string.Join(';', merged);
+        }
+        catch
+        {
+            // Registry read is best-effort — fall back to the unmodified process PATH.
+            return processPath;
+        }
     }
 
     private static bool IsAccessDenied(string output) =>

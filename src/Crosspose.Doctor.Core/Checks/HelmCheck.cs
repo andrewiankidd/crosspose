@@ -103,6 +103,9 @@ public sealed class HelmCheck : ICheckFix
         // Read the user PATH directly from the registry to catch those entries.
         try
         {
+            if (!OperatingSystem.IsWindows())
+                return null;
+
             var userPath = Microsoft.Win32.Registry.GetValue(
                 @"HKEY_CURRENT_USER\Environment", "Path", null) as string;
             if (userPath is not null)
