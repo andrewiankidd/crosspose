@@ -550,6 +550,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ContainerGroups.Add(pg);
             }
 
+            // If still waiting for images to pull, re-insert the placeholder so it stays
+            // visible across container-list refreshes (podman ps won't show pulling containers).
+            if (_pullingProject is not null)
+            {
+                _pullPlaceholder = CreatePullPlaceholder(_pullingProject);
+                AllContainers.Add(_pullPlaceholder);
+            }
 
             OnPropertyChanged(nameof(LogOutput));
             UpdateContainerButtons();
