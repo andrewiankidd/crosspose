@@ -26,6 +26,10 @@ public static class CheckCatalog
             new HnsNatHealthCheck(),
             new OrphanedDockerNetworkCheck(),
 
+            // Config cleanup runs after network cleanup so the network list is accurate,
+            // but before WSL so Docker state is settled first.
+            new StalePortProxyConfigCheck(),
+
             // --- WSL base ---
             new WslCheck(),
             new WslMemoryLimitCheck(),
@@ -40,7 +44,6 @@ public static class CheckCatalog
             new OrphanedPodmanNetworkCheck(),
 
             // --- Port proxy / firewall (StalePortProxyCheck queries listeners inside the distro) ---
-            new StalePortProxyConfigCheck(),
             new StalePortProxyCheck(),
             new StaleFirewallRuleCheck(),
 
