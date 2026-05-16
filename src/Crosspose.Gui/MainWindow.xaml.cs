@@ -1509,7 +1509,47 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void OnRefreshClick(object sender, RoutedEventArgs e)
     {
+        // On the Containers view, nudge podman to re-run healthchecks for any
+        // unhealthy containers before fetching the updated list.  podman's
+        // healthcheck timer doesn't fire inside crosspose-data (no systemd), so
+        // without this the status would never recover after a transient failure.
+        if (GetCurrentView() == "Containers")
+            await NudgePodmanHealthchecksAsync();
+
         await RefreshCurrentViewAsync(true);
+    }
+
+    /// <summary>
+    /// Runs <c>podman healthcheck run</c> for every podman container currently
+    /// showing as "unhealthy" so the next <c>podman ps</c> reflects the result.
+    /// Runs all checks in parallel with a 15-second timeout (best-effort).
+    /// </summary>
+    private async Task NudgePodmanHealthchecksAsync()
+    {
+        var unhealthyNames = AllContainers
+            .Where(r => !r.IsPulling &&
+                        r.Platform.Contains("podman", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(r.Health, "unhealthy", StringComparison.OrdinalIgnoreCase))
+            .Select(r => r.Id)   // Id holds the container name (not the short hash)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (unhealthyNames.Count == 0) return;
+
+        _logger.LogInformation("Nudging healthcheck for {Count} unhealthy podman container(s): {Names}",
+            unhealthyNames.Count, string.Join(", ", unhealthyNames));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        try
+        {
+            await Task.WhenAll(unhealthyNames.Select(name =>
+                _podmanRunner.ExecAsync(["healthcheck", "run", name], cancellationToken: cts.Token)));
+        }
+        catch (OperationCanceledException) { /* timeout is fine — result lands on next refresh */ }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error nudging podman healthchecks");
+        }
     }
 
     private void OnProjectsNew(object sender, RoutedEventArgs e)
