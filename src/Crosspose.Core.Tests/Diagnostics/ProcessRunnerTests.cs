@@ -43,9 +43,15 @@ public class ProcessRunnerTests
     public async Task RunAsync_CancellationToken_CancelsProcess()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        var result = await _runner.RunAsync("cmd", "/c ping -n 30 127.0.0.1", cancellationToken: cts.Token);
-        // Process should be killed; we just verify it didn't hang for 30 seconds
-        Assert.True(true); // If we got here, cancellation worked
+        // When the token fires, RunAsync either returns a ProcessResult (if the
+        // process exits fast enough after Kill) or throws OperationCanceledException
+        // (if TrySetCanceled wins the race with the Exited event).  Both outcomes
+        // are correct — what matters is that we don't block for 30 seconds.
+        try
+        {
+            await _runner.RunAsync("cmd", "/c ping -n 30 127.0.0.1", cancellationToken: cts.Token);
+        }
+        catch (OperationCanceledException) { /* expected on slower machines / CI */ }
     }
 
     [Fact]
