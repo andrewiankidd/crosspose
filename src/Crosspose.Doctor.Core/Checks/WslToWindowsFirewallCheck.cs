@@ -43,12 +43,14 @@ public sealed class WslToWindowsFirewallCheck : ICheckFix
         if (ruleCheck.IsSuccess && ruleCheck.StandardOutput.Trim().Equals("Allow", StringComparison.OrdinalIgnoreCase))
             return CheckResult.Success("Hyper-V firewall allows WSL inbound traffic.");
 
-        // Also check the regular Windows firewall for the WSL interface
+        // Also check whether our named Windows firewall rule exists.
+        // ProcessRunner uses UseShellExecute=false, so shell pipes are not available —
+        // query the specific rule by name instead of piping through findstr.
         var fwCheck = await runner.RunAsync("netsh",
-            $"advfirewall firewall show rule name=all dir=in | findstr /i \"{wslHostIp}\"",
+            "advfirewall firewall show rule name=\"CrossposeWSLInbound\" dir=in",
             cancellationToken: cancellationToken);
 
-        if (fwCheck.IsSuccess && !string.IsNullOrWhiteSpace(fwCheck.StandardOutput))
+        if (fwCheck.IsSuccess && fwCheck.StandardOutput.Contains("CrossposeWSLInbound", StringComparison.OrdinalIgnoreCase))
             return CheckResult.Success("Windows firewall allows inbound on WSL interface.");
 
         return CheckResult.Failure(
