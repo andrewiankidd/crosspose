@@ -18,7 +18,7 @@
                 BorderBrush="{DynamicResource BorderBrushColor}"
                 BorderThickness="1"
                 Background="{DynamicResource PanelBackground}">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
                 <TextBox x:Name="OutputBox"
                          IsReadOnly="True"
                          AcceptsReturn="True"

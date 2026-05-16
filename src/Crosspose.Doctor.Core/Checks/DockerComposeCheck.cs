@@ -44,7 +44,7 @@ public sealed class DockerComposeCheck : ICheckFix
             return FixResult.Failure("winget not available; install Docker Desktop manually from https://www.docker.com/products/docker-desktop/");
         }
 
-        var result = await runner.RunAsync("winget", "install -e --id Docker.DockerDesktop -h", cancellationToken: cancellationToken);
+        var result = await runner.RunAsync("winget", "install -e --id Docker.DockerDesktop -h --accept-source-agreements --accept-package-agreements --override \"install --quiet --accept-license --backend=windows\"", cancellationToken: cancellationToken);
         return result.IsSuccess
             ? FixResult.Success("Docker Desktop installation attempted via winget.")
             : FixResult.Failure($"winget install Docker.DockerDesktop failed: {result.StandardError}");

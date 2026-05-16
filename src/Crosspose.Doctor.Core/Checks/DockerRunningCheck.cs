@@ -49,8 +49,8 @@ public sealed class DockerRunningCheck : ICheckFix
             return FixResult.Failure(error);
         }
 
-        // Wait briefly for the engine to come up.
-        for (var i = 0; i < 6; i++)
+        // Poll for up to 2 minutes — a fresh install needs significantly longer than a warm restart.
+        for (var i = 0; i < 24; i++)
         {
             await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             var probe = await runner.RunAsync("docker", "info", cancellationToken: cancellationToken);
@@ -60,7 +60,7 @@ public sealed class DockerRunningCheck : ICheckFix
             }
         }
 
-        return FixResult.Failure("Started Docker Desktop, but the engine did not respond in time.");
+        return FixResult.Failure("Started Docker Desktop, but the engine did not respond within 2 minutes.");
     }
 
     private static string? ResolveDockerDesktopPath()

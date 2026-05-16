@@ -126,7 +126,7 @@ public partial class FixAllWindow : Window
         {
             _buffer.AppendLine($"[{ts}] {line}");
             OutputBox.Text = _buffer.ToString();
-            OutputBox.ScrollToEnd();
+            Scroller.ScrollToBottom();
         });
     }
 

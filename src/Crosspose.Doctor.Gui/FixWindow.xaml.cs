@@ -64,7 +64,7 @@ public partial class FixWindow : Window
         {
             _buffer.AppendLine(line);
             OutputBox.Text = _buffer.ToString();
-            OutputBox.ScrollToEnd();
+            Scroller.ScrollToBottom();
         });
     }
 

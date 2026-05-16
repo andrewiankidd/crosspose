@@ -12,28 +12,44 @@ public static class CheckCatalog
         var enabled = new HashSet<string>(enabledAdditionalKeys ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
         var checks = new List<ICheckFix>
         {
+            // --- Tool installation (winget only, no other dependencies) ---
             new DockerComposeCheck(),
+            new HelmCheck(),
+            new AzureCliCheck(),
+
+            // --- Docker setup ---
+            new DockerUsersGroupCheck(),
+            new WindowsContainersFeatureCheck(),
+            new DockerHelperServiceCheck(),
             new DockerRunningCheck(),
             new DockerWindowsModeCheck(),
             new HnsNatHealthCheck(),
             new OrphanedDockerNetworkCheck(),
-            new OrphanedPodmanNetworkCheck(),
-            new StalePortProxyConfigCheck(),
+
+            // --- WSL base ---
             new WslCheck(),
             new WslMemoryLimitCheck(),
             new WslNetworkingModeCheck(),
-            new StalePortProxyCheck(),
-            new StaleFirewallRuleCheck(),
-            new SudoCheck(),
+
+            // --- Crosspose WSL distro (all checks below run inside it) ---
             new CrossposeWslCheck(),
+            new SudoCheck(),
             new PodmanWslCheck(),
             new PodmanCgroupCheck(),
             new PodmanComposeWslCheck(),
-            new HelmCheck(),
-            new AzureCliCheck(),
+            new OrphanedPodmanNetworkCheck(),
+
+            // --- Port proxy / firewall (StalePortProxyCheck queries listeners inside the distro) ---
+            new StalePortProxyConfigCheck(),
+            new StalePortProxyCheck(),
+            new StaleFirewallRuleCheck(),
+
+            // --- Podman container state ---
             new PodmanHealthcheckRunnerCheck(),
             new PodmanCreatedContainerCheck(),
             new PodmanContainerAutohealCheck(),
+
+            // --- Networking ---
             new WslToWindowsFirewallCheck()
         };
 
