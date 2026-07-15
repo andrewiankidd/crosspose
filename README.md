@@ -2,7 +2,7 @@
 
 ![logo](assets/logo.png)
 
-Crosspose is a Windows-first toolchain for turning Helm/Kubernetes workloads into runnable Docker Compose stacks and orchestrating them side-by-side on Docker Desktop (Windows containers) and Podman in WSL.
+Crosspose runs cross-platform Helm charts locally on Windows: it turns Helm/Kubernetes workloads into OS-split Docker Compose stacks and orchestrates Windows and Linux containers side-by-side on Docker Desktop and Podman in WSL, with cross-OS networking — hybrid Windows+Linux workloads without a mixed-OS Kubernetes cluster.
 
 ## About
 
