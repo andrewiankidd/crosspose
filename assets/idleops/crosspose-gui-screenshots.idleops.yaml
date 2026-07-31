@@ -1,0 +1,270 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/andrewiankidd/IdleOps/main/schema/idleops.schema.json
+# Crosspose.Gui — capture all sidebar views, container details, and theme toggle
+# Prerequisites: crosspose solution built, Docker/Podman running with test containers
+# Output: C:\git\crosspose\assets\screencaps\
+#
+# Usage (from IdleOps repo root):
+#   src/playbk/bin/Debug/net10.0/playbk.exe -i src/playbk/inputs/crosspose-gui-screenshots.idleops.yaml -o ./outputs
+
+steps:
+  # --- Ensure light mode before launch ---
+  - name: Ensure light mode in config
+    action: exec
+    args: >
+      powershell -NoProfile -Command
+      "(Get-Content $env:APPDATA\crosspose\crosspose.yml) -replace
+      'dark-mode: true','dark-mode: false' |
+      Set-Content $env:APPDATA\crosspose\crosspose.yml"
+    wait: true
+
+  # --- Launch Crosspose.Gui ---
+  - id: gui
+    name: Launch Crosspose.Gui
+    action: exec
+    args: dotnet run --project C:\git\crosspose\src\Crosspose.Gui
+    wait: false
+
+  - name: Wait for GUI window
+    action: wait-window
+    window: "Crosspose"
+    timeout: 15
+
+  - name: Let data load
+    action: sleep
+    args: "4"
+
+  # === SIDEBAR VIEWS ===
+
+  - name: Click Containers sidebar
+    action: click-text
+    window: "Crosspose"
+    text: "Containers"
+
+  - name: Wait for containers data
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Containers view
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-containers-view.png
+
+  - name: Click Helm Charts sidebar
+    action: click-text
+    window: "Crosspose"
+    text: "Helm Charts"
+
+  - name: Wait for charts data
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Charts view
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-charts-view.png
+
+  - name: Click Compose Bundles sidebar
+    action: click-text
+    window: "Crosspose"
+    text: "Compose Bundles"
+
+  - name: Wait for bundles data
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Bundles view
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-bundles-view.png
+
+  - name: Click Projects sidebar
+    action: click-text
+    window: "Crosspose"
+    text: "Projects"
+
+  - name: Wait for projects data
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Projects view
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-projects-view.png
+
+  - name: Click Images sidebar
+    action: click-text
+    window: "Crosspose"
+    text: "Images"
+
+  - name: Wait for images data
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Images view
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-images-view.png
+
+  - name: Click Volumes sidebar
+    action: click-text
+    window: "Crosspose"
+    text: "Volumes"
+
+  - name: Wait for volumes data
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Volumes view
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-volumes-view.png
+
+  # === CONTAINER DETAILS WINDOW ===
+
+  - name: Switch to Containers
+    action: click-text
+    window: "Crosspose"
+    text: "Containers"
+
+  - name: Wait for containers
+    action: sleep
+    args: "2"
+
+  # Find a container row via OCR, then double-click it with two rapid inpctl clicks
+  - name: Find and double-click container row
+    action: exec
+    args: powershell -NoProfile -Command "$c = txtfnd -w 'Crosspose' -t 'running'; if ($c) { inpctl --window 'Crosspose' --leftmouse $c; inpctl --window 'Crosspose' --leftmouse $c }"
+    wait: true
+
+  - name: Wait for details window
+    action: wait-window
+    window: "Container Details"
+    timeout: 5
+
+  - name: Let details load
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Container Details - Logs tab
+    action: screenshot
+    window: "Container Details"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-container-details-logs.png
+
+  # Container Details tabs — use pixel coordinates (OCR misreads small tab text)
+  - name: Click Inspect tab
+    action: exec
+    args: inpctl --window "Container Details" --leftmouse "84,127"
+    wait: true
+
+  - name: Wait for inspect data
+    action: sleep
+    args: "2"
+
+  - name: Screenshot Container Details - Inspect tab
+    action: screenshot
+    window: "Container Details"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-container-details-inspect.png
+
+  - name: Click Bind mounts tab
+    action: exec
+    args: inpctl --window "Container Details" --leftmouse "145,127"
+    wait: true
+
+  - name: Wait for mounts data
+    action: sleep
+    args: "1"
+
+  - name: Screenshot Container Details - Bind mounts tab
+    action: screenshot
+    window: "Container Details"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-container-details-mounts.png
+
+  - name: Click Exec tab
+    action: exec
+    args: inpctl --window "Container Details" --leftmouse "206,127"
+    wait: true
+
+  - name: Screenshot Container Details - Exec tab
+    action: screenshot
+    window: "Container Details"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-container-details-exec.png
+
+  - name: Click Stats tab
+    action: exec
+    args: inpctl --window "Container Details" --leftmouse "278,127"
+    wait: true
+
+  - name: Wait for stats
+    action: sleep
+    args: "1"
+
+  - name: Screenshot Container Details - Stats tab
+    action: screenshot
+    window: "Container Details"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-container-details-stats.png
+
+  # Close Container Details by clicking X button (PostMessage ALT+F4 doesn't work on WPF)
+  - name: Close Container Details
+    action: exec
+    args: inpctl --window "Container Details" --leftmouse "940,8" --move-cursor
+    wait: true
+
+  - name: Wait for close
+    action: sleep
+    args: "1"
+
+  # === THEME TOGGLE ===
+  # Use OCR to click menu items (keyboard accelerators via PostMessage don't work on WPF menus)
+
+  - name: Click View menu
+    action: click-text
+    window: "Crosspose"
+    text: "View"
+
+  - name: Wait for menu
+    action: sleep
+    args: "0.5"
+
+  # Click "Toggle Theme" in dropdown — below "Log View", ~55px below "View" text
+  - name: Click Toggle Theme in dropdown
+    action: exec
+    args: inpctl --window "Crosspose" --leftmouse "59,80" --move-cursor
+    wait: true
+
+  - name: Wait for theme
+    action: sleep
+    args: "1"
+
+  - name: Screenshot dark mode
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-dark-mode.png
+
+  - name: Click View menu again
+    action: click-text
+    window: "Crosspose"
+    text: "View"
+
+  - name: Wait for menu
+    action: sleep
+    args: "0.5"
+
+  - name: Click Toggle Theme again
+    action: exec
+    args: inpctl --window "Crosspose" --leftmouse "59,80" --move-cursor
+    wait: true
+
+  - name: Wait for theme
+    action: sleep
+    args: "1"
+
+  - name: Screenshot light mode
+    action: screenshot
+    window: "Crosspose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-gui-light-mode.png
+
+  # === CLEANUP ===
+  - name: Close Crosspose.Gui
+    action: exec
+    args: inpctl --window "Crosspose" --leftmouse "940,8" --move-cursor
+    wait: true

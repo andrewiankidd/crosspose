@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/andrewiankidd/IdleOps/main/schema/idleops.schema.json
+# Crosspose.Dekompose.Gui — capture with hello world chart pre-loaded
+# Output: C:\git\crosspose\assets\screencaps\
+
+steps:
+  # Launch with chart and values pre-loaded via CLI args
+  - name: Launch Dekompose with hello world chart
+    action: exec
+    args: >
+      dotnet run --project C:\git\crosspose\src\Crosspose.Dekompose.Gui --
+      --chart C:\Users\Andrew\AppData\Roaming\crosspose\helm-charts\cross-platform-hello-0.4.0.tgz
+      --values C:\Users\Andrew\AppData\Roaming\crosspose\helm-charts\cross-platform-hello-0.4.0.values.yaml
+    wait: false
+
+  - name: Wait for Dekompose window
+    action: wait-window
+    window: "Crosspose Dekompose"
+    timeout: 15
+
+  - name: Let UI load and populate
+    action: sleep
+    args: "4"
+
+  - name: Screenshot ready-to-dekompose state
+    action: screenshot
+    window: "Crosspose Dekompose"
+    output: C:\git\crosspose\assets\screencaps\crosspose-dekompose-gui-main.png
+
+  - name: Close Dekompose
+    action: exec
+    args: inpctl --window "Crosspose Dekompose" --leftmouse "880,8" --move-cursor
+    wait: true

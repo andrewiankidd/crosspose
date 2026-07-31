@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/andrewiankidd/IdleOps/main/schema/idleops.schema.json
+# Crosspose.Doctor.Gui — capture health check dashboard
+# Output: C:\git\crosspose\assets\screencaps\
+
+steps:
+  - name: Launch Crosspose.Doctor.Gui
+    action: exec
+    args: dotnet run --project C:\git\crosspose\src\Crosspose.Doctor.Gui
+    wait: false
+
+  - name: Wait for Doctor window
+    action: wait-window
+    window: "Crosspose Doctor"
+    timeout: 15
+
+  - name: Let checks run
+    action: sleep
+    args: "8"
+
+  - name: Screenshot checks dashboard
+    action: screenshot
+    window: "Crosspose Doctor"
+    output: C:\git\crosspose\assets\screencaps\crosspose-doctor-gui-main.png
+
+  - name: Close Doctor
+    action: exec
+    args: inpctl --window "Crosspose Doctor" --leftmouse "690,8" --move-cursor
+    wait: true
